@@ -12,12 +12,71 @@ from cgi import parse_qs
 import simplejson as json
 from urllib import urlencode
 from httplib import HTTPConnection
+from threading import Lock, Thread
+from time import sleep
+
+class MyThread(Thread):
+    def __init__(self, hostname, port, uri, verbose):
+        Thread.__init__(self)
+        self.count = 0
+        self.lock = Lock()
+        self.queue = list()
+
+        self.hostname = hostname
+        self.port = port
+        self.uri = uri
+        self.verbose = verbose
+
+        print 'thread started'
+
+    def dequeue(self):
+        self.lock.acquire()
+        try:
+            if self.count > 0:
+                data = self.queue.pop(0)
+                self.count -= 1
+            else:
+                data = None
+        finally:
+            self.lock.release()
+        return data
+
+    def enqueue(self, data):
+        self.lock.acquire()
+        try:
+            self.queue.append(data)
+            self.count += 1
+        finally:
+            self.lock.release()
+
+    def run(self):
+        while True:
+            data = self.dequeue()
+            if data is None:
+                # Sleep only if there is nothing to do.
+                sleep(5)
+            else:
+                jdata = json.loads(data)
+                if self.verbose:
+                    print json.dumps(jdata, sort_keys=True, indent=4)
+                headers = {'Content-Type': 'application/json'}
+
+                conn = HTTPConnection(self.hostname, self.port)
+                # Since we have a python list of json objects, iterate through
+                # the list and send each python object individually.
+                for datum in jdata:
+                    params = json.dumps(datum)
+                    if self.verbose:
+                        conn.set_debuglevel(1)
+                    conn.request('POST', self.uri, params, headers)
+                    # Must read the response before reusing the connection to
+                    # send another request.
+                    response = conn.getresponse()
+                    response.read()
+                conn.close()
 
 class MyHandler(BaseHTTPRequestHandler):
-    hostname = None
-    port = None
-    uri = None
-    verbose = None
+    thread = None
 
     def do_HEAD(self):
         self.send_response(200)
@@ -35,25 +94,7 @@ class MyHandler(BaseHTTPRequestHandler):
         # datastructure in python is effectively a list of valid json objects,
         # as opposed to a single json object.
         data = self.rfile.read(length)
-
-        jdata = json.loads(data)
-        if self.verbose:
-            print json.dumps(jdata, sort_keys=True, indent=4)
-        headers = {'Content-Type': 'application/json'}
-
-        conn = HTTPConnection(self.hostname, self.port)
-        # Since we have a python list of json objects, iterate through the list
-        # and send each python object individually.
-        for datum in jdata:
-            params = json.dumps(datum)
-            if self.verbose:
-                conn.set_debuglevel(1)
-            conn.request('POST', self.uri, params, headers)
-            # Must read the response before reusing the connection to send
-            # another request.
-            response = conn.getresponse()
-            response.read()
-        conn.close()
+        self.thread.enqueue(data)
 
 def main():
     parser = OptionParser(usage="usage: %prog [options]")
@@ -87,10 +128,8 @@ def main():
 
     try:
         myh = MyHandler
-        myh.hostname = hostname
-        myh.port = port
-        myh.uri = uri
-        myh.verbose = verbose
+        myh.thread = MyThread(hostname, port, uri, verbose)
+        myh.thread.start()
 
         httpserver = HTTPServer(('', listener), myh)
         print 'yams test listener started'
