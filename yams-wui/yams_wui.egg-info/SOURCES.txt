@@ -24,6 +24,7 @@ yamswui/lib/app_globals.py
 yamswui/lib/base.py
 yamswui/lib/helpers.py
 yamswui/model/__init__.py
+yamswui/model/meta.py
 yamswui/public/bg.png
 yamswui/public/favicon.ico
 yamswui/public/index.html
