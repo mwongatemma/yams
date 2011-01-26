@@ -8,6 +8,7 @@ PasteScript==1.7.3
 Pygments==1.4
 Pylons==1.0
 Routes==1.12.3
+SQLAlchemy==0.6.6
 Tempita==0.5dev
 WebError==0.10.3
 WebHelpers==1.2
@@ -15,4 +16,6 @@ WebOb==1.0.1
 WebTest==1.2.3
 decorator==3.3.0
 nose==1.0.0
+psycopg2==2.3.2
+pysqlite==2.6.0
 simplejson==2.1.3
