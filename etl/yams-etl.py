@@ -6,6 +6,7 @@
 # pure JSON.  Then this script iterates through the POST data to submit the
 # individual JSON objects to another HTTP RESTful JSON API.
 
+import sys
 from optparse import OptionParser
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from cgi import parse_qs
@@ -15,6 +16,8 @@ from httplib import HTTPConnection
 from threading import Lock, Thread
 from time import sleep
 import random
+
+from sqlalchemy import create_engine
 
 class MyQueue:
     def __init__(self, verbose):
@@ -49,19 +52,105 @@ class MyQueue:
             self.lock.release()
 
 class MyThread(Thread):
-    def __init__(self, queue, hostname, port, uri, verbose):
+    def __init__(self, queue, engine, verbose):
         Thread.__init__(self)
 
         self.queue = queue
-        self.hostname = hostname
-        self.port = port
-        self.uri = uri
+        self.engine = engine
         self.verbose = verbose
 
         self.stopping = False
 
         self.random = random.Random()
         self.random.seed()
+
+    def process(self, data):
+        if self.verbose:
+            print json.dumps(data, sort_keys=True, indent=4)
+
+        # Since we have a python list of json objects, iterate through the
+        # list.
+
+        for datum in data:
+            # Build a single INSERT statement per datum since collectd sends
+            # data from more than one plugin at a time.
+
+            plugin = datum['plugin']
+
+            # Depending on the plugin there may be meta data to capture.
+            meta_columns = ''
+            if plugin == 'postgresql':
+                meta_columns = ', database, schemaname, tablename, indexname'
+
+            # Convert json arrays into postgres arrays.
+            dsnames = list()
+            dstypes = list()
+            values = list()
+            for val in datum['dsnames']:
+                dsnames.append('"%s"' % val)
+            for val in datum['dstypes']:
+                dstypes.append('"%s"' % val)
+            for val in datum['values']:
+                values.append('%g' % val)
+
+            # Append meta data value if appropriate.
+            meta_values = ''
+            if plugin == 'postgresql':
+                if 'schema' in datum:
+                    schemaname = datum['schema']
+                else:
+                    schemaname = 'NULL'
+                if 'table' in datum:
+                    tablename = datum['table']
+                else:
+                    tablename = 'NULL'
+                if 'index' in datum:
+                    indexname = datum['index']
+                else:
+                    indexname = 'NULL'
+                meta_values = ', \'%s\', \'%s\', \'%s\', \'%s\'' % \
+                        (datum['database'], schemaname, tablename,
+                         indexname)
+
+            # Convert empty strings to NULL.
+            if datum['plugin_instance'] == '':
+                plugin_instance = 'NULL'
+            else:
+                plugin_instance = '\'%s\'' % datum['plugin_instance']
+
+            if datum['type_instance'] == '':
+                type_instance = 'NULL'
+            else:
+                type_instance = '\'%s\'' % datum['type_instance']
+
+            # TODO: Is there a way to parameterize the values as opposed to
+            # building it 100% on the fly?
+            sql = \
+"""INSERT INTO vl_%s (time, interval, host, plugin, plugin_instance, type,
+                      type_instance, dsnames, dstypes, values%s)
+VALUES (TIMESTAMP WITH TIME ZONE \'epoch\' + %s * INTERVAL \'1 second\', %s, \
+        \'%s\', \'%s\', %s, \'%s\', %s, \'{%s}\', \'{%s}\', \
+        \'{%s}\'%s);""" % (plugin, meta_columns, datum['time'],
+                    datum['interval'], datum['host'], plugin,
+                    plugin_instance, datum['type'],
+                    type_instance, ', '.join(dsnames),
+                    ', '.join(dstypes), ', '.join(values), meta_values)
+            if self.verbose:
+                print sql
+            connection = self.engine.connect()
+            try:
+                connection.execute('BEGIN;')
+                # Yeah, postgres doesn't technically support READ UNCOMMITTED
+                # but maybe one day...
+                #connection.execute('SET TRANSACTION ISOLATION LEVEL ' \
+                        #'READ UNCOMMITTED;')
+                connection.execute(sql)
+                connection.execute('COMMIT;')
+            except Exception, e:
+                connection.execute('ROLLBACK;')
+                print e
+                sys.exit(1)
+            connection.close()
 
     def run(self):
         while True:
@@ -72,24 +161,7 @@ class MyThread(Thread):
                 # Sleep up to 5 seconds if there is nothing to do.
                 sleep(self.random.randint(0, 5))
             else:
-                jdata = json.loads(data)
-                if self.verbose:
-                    print json.dumps(jdata, sort_keys=True, indent=4)
-                headers = {'Content-Type': 'application/json'}
-
-                conn = HTTPConnection(self.hostname, self.port)
-                # Since we have a python list of json objects, iterate through
-                # the list and send each python object individually.
-                for datum in jdata:
-                    params = json.dumps(datum)
-                    if self.verbose:
-                        conn.set_debuglevel(1)
-                    conn.request('POST', self.uri, params, headers)
-                    # Must read the response before reusing the connection to
-                    # send another request.
-                    response = conn.getresponse()
-                    response.read()
-                conn.close()
+                self.process(json.loads(data))
 
     def stop(self):
         self.stopping = True
@@ -118,9 +190,13 @@ class MyHandler(BaseHTTPRequestHandler):
 def main():
     parser = OptionParser(usage="usage: %prog [options]")
     parser.add_option('-l', '--listener', help='listener port (default 8888)')
-    parser.add_option('-p', '--port', help='http server port (default 5984)')
-    parser.add_option('-s', '--server', help='http server hostname')
-    parser.add_option('-u', '--uri', help='uri (default /collectd/)')
+    parser.add_option('--pgdatabase',
+            help='postgres database (default collectd)')
+    parser.add_option('--pghost', help='postgres host')
+    parser.add_option('--pgpool',
+            help='postgres connection pool size (default 10)')
+    parser.add_option('--pgport', help='postgres port (default 5432)')
+    parser.add_option('--pguser', help='postgres user (default collectd)')
     parser.add_option('-v', '--verbose', action='store_true', default=False,
                       help='verbose output')
     parser.add_option('-w', '--workers', help='number of threads (default 1)')
@@ -132,19 +208,33 @@ def main():
 
     verbose = options.verbose
 
-    if not options.server:
-        parser.error('a hostname must be specified')
+    if not options.pghost:
+        parser.error('database hostname must be specified')
     else:
-        hostname = options.server
+        pghost = options.pghost
 
-    if options.port:
-        port = options.port
+    if options.pgpool:
+        pgpool = int(options.pgpool)
+    else:
+        pgpool = 10
 
-    if options.uri:
-        uri = options.uri
+    if options.pgport:
+        pgport = options.pgport
+    else:
+        pgport = None
+
+    if options.pguser:
+        pguser = options.pguser
+    else:
+        pguser = 'collectd'
+
+    if options.pgdatabase:
+        pgdatabase = options.pgdatabase
+    else:
+        pgdatabase = 'collectd'
 
     if options.listener:
-        listener = options.listener
+        listener = int(options.listener)
 
     if options.workers:
         workers = int(options.workers)
@@ -157,11 +247,17 @@ def main():
         myh = MyHandler
         myh.queue = queue
 
+        dsnname = 'postgresql://%s@%s' % (pguser, pghost)
+        if pgport:
+            dsnname += ':%s' % port
+        dsnname += '/%s' % pgdatabase
+        engine = create_engine(dsnname, pool_size=pgpool, max_overflow=0)
+
         i = 0
         print 'ramping up worker threads'
         threads = list()
         while i < workers:
-            threads.append(MyThread(queue, hostname, port, uri, verbose))
+            threads.append(MyThread(queue, engine, verbose))
             threads[i].start()
             i += 1
         print 'worker threads ramped up'
