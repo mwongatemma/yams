@@ -14,6 +14,7 @@ from urllib import urlencode
 from httplib import HTTPConnection
 from threading import Lock, Thread
 from time import sleep
+import random
 
 class MyQueue:
     def __init__(self, verbose):
@@ -57,12 +58,19 @@ class MyThread(Thread):
         self.uri = uri
         self.verbose = verbose
 
+        self.stopping = False
+
+        self.random = random.Random()
+        self.random.seed()
+
     def run(self):
         while True:
             data = self.queue.dequeue()
             if data is None:
-                # Sleep only if there is nothing to do.
-                sleep(5)
+                if self.stopping:
+                    return
+                # Sleep up to 5 seconds if there is nothing to do.
+                sleep(self.random.randint(0, 5))
             else:
                 jdata = json.loads(data)
                 if self.verbose:
@@ -82,6 +90,9 @@ class MyThread(Thread):
                     response = conn.getresponse()
                     response.read()
                 conn.close()
+
+    def stop(self):
+        self.stopping = True
 
 class MyHandler(BaseHTTPRequestHandler):
     queue = None
@@ -148,8 +159,10 @@ def main():
 
         i = 0
         print 'ramping up worker threads'
+        threads = list()
         while i < workers:
-            MyThread(queue, hostname, port, uri, verbose).start()
+            threads.append(MyThread(queue, hostname, port, uri, verbose))
+            threads[i].start()
             i += 1
         print 'worker threads ramped up'
 
@@ -158,6 +171,8 @@ def main():
         httpserver.serve_forever()
     except KeyboardInterrupt:
         print '^C received, shutting down server'
+        for thread in threads:
+            thread.stop()
         httpserver.socket.close()
 
 if __name__ == '__main__':
