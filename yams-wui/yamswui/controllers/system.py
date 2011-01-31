@@ -26,7 +26,36 @@ class SystemController(BaseController):
 
     def detail(self, id):
         c.host = id
+
         connection = Session.connection()
+
+        # load stats
+        connection.execute('BEGIN;')
+        tuples = connection.execute(text(
+"""SELECT EXTRACT(EPOCH FROM time) * 1000 AS time, dsnames, values
+FROM vl_load
+WHERE time > NOW() - INTERVAL '1 DAY'
+  AND host = :name
+ORDER BY time ASC; ;"""), name=c.host)
+        connection.execute('COMMIT;')
+
+        vl_load1 = list()
+        vl_load5 = list()
+        vl_load15 = list()
+        first = True
+        for row in tuples:
+            if first:
+                c.load_dsnames = row['dsnames']
+
+            ctime = int(row['time'])
+            vl_load1.append('[%d, %f]' % (ctime, row['values'][0]))
+            vl_load5.append('[%d, %f]' % (ctime, row['values'][1]))
+            vl_load15.append('[%d, %f]' % (ctime, row['values'][2]))
+        c.load1 = ', '.join(vl_load1)
+        c.load5 = ', '.join(vl_load5)
+        c.load15 = ', '.join(vl_load15)
+
+        # processor stats
         connection.execute('BEGIN;')
         tuples = connection.execute(text(
 """SELECT EXTRACT(EPOCH FROM time) * 1000 AS time,
@@ -47,7 +76,6 @@ WHERE time > NOW() - INTERVAL '1 DAY'
   AND host = :name
 GROUP BY time
 ORDER BY time ASC;"""), name=c.host)
-        connection.close()
 
         rows = tuples.fetchall()
 
@@ -116,6 +144,8 @@ ORDER BY time ASC;"""), name=c.host)
         c.system = ', '.join(vl_system)
         c.user = ', '.join(vl_user)
         c.wait = ', '.join(vl_wait)
+
+        connection.close()
 
         return render('/system-detail.mako')
 

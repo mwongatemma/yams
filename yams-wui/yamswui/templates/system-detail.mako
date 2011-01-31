@@ -8,11 +8,101 @@
   <body>
     <h1>System Details: ${c.host}</h1>
 
+    <button id="reset-load">Reset</button>
+    <div id="load" style="width:600px;height:300px;">
+    </div>
+
     <button id="reset-cpu">Reset</button>
     <div id="cpu" style="width:600px;height:300px;">
     </div>
+
     <script type="text/javascript" charset="utf-8">
-      var options = {
+      var options_load = {
+          title: 'Load',
+          xaxis: {
+              title: 'Time',
+              tickFormatter: myDateFormatter
+          },
+          yaxis: {
+              min: 0
+          },
+          legend: {
+              position: 'nw',
+              labelFormatter: myLabelFunc
+          },
+          mouse: {
+              track: true,
+              lineColor: 'purple',
+              sensibility: 100,
+              trackDecimals: 2,
+              trackFormatter: function(obj) {
+                  return myDateFormatter(obj.x) +', ' + obj.y;
+              }
+          },
+          selection: { mode: 'x' }
+      };
+
+      function myLabelFunc(label) {
+          return label;
+      }
+
+      function myDateFormatter(ctime) {
+          myDate = Date(ctime);
+          return myDate.toLocaleString();
+      }
+
+      function myDraw() {
+          function drawGraph(opts) {
+              var o = Object.extend(Object.clone(options_load), opts || {});
+              return Flotr.draw(
+                  $('load'),
+                  [
+                      {
+                          label: '${c.load_dsnames[0]}',
+                          data: [ ${c.load1} ],
+                          lines: { show: true },
+                          points: { show: true }
+                      },
+                      {
+                          label: '${c.load_dsnames[1]}',
+                          data: [ ${c.load5} ],
+                          lines: { show: true },
+                          points: { show: true }
+                      },
+                      {
+                          label: '${c.load_dsnames[2]}',
+                          data: [ ${c.load15} ],
+                          lines: { show: true },
+                          points: { show: true }
+                      }
+                  ],
+                  o
+              );
+          }
+
+          var f = drawGraph();
+
+          $('load').observe('flotr:select', function(evt) {
+              var area = evt.memo[0];
+
+              f = drawGraph({
+                  xaxis: {
+                      min: area.x1,
+                      max: area.x2,
+                      tickFormatter: myDateFormatter
+                  },
+                  yaxis: { min: area.y1, max: area.y2 }
+              });
+          });
+
+          $('reset-load').observe('click', function(){ drawGraph() });
+      }
+
+      document.observe('dom:loaded', myDraw);
+    </script>
+
+    <script type="text/javascript" charset="utf-8">
+      var options_cpu = {
           title: 'Processor Utilization',
           xaxis: {
               title: 'Time',
@@ -50,7 +140,7 @@
 
       function myDraw() {
           function drawGraph(opts) {
-              var o = Object.extend(Object.clone(options), opts || {});
+              var o = Object.extend(Object.clone(options_cpu), opts || {});
               return Flotr.draw(
                   $('cpu'),
                   [
@@ -118,7 +208,7 @@
                       max: area.x2,
                       tickFormatter: myDateFormatter
                   },
-                  yaxis: { min: area.y1, max: area.y2 }
+                  yaxis: {min: area.y1, max: area.y2, title: 'Percent' }
               });
           });
 
