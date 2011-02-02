@@ -58,19 +58,19 @@
                           label: '${c.load_dsnames[0]}',
                           data: [ ${c.load1} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: '${c.load_dsnames[1]}',
                           data: [ ${c.load5} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: '${c.load_dsnames[2]}',
                           data: [ ${c.load15} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       }
                   ],
                   o
@@ -151,49 +151,49 @@
                           label: 'idle',
                           data: [ ${c.idle} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: 'interrupt',
                           data: [ ${c.interrupt} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: 'nice',
                           data: [ ${c.nice} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: 'softirq',
                           data: [ ${c.softirq} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: 'steal',
                           data: [ ${c.steal} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: 'system',
                           data: [ ${c.system} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: 'user',
                           data: [ ${c.user} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                       {
                           label: 'wait',
                           data: [ ${c.wait} ],
                           lines: { show: true },
-                          points: { show: true }
+                          points: { show: false }
                       },
                   ],
                   o
