@@ -39,6 +39,11 @@ WHERE time > NOW() - INTERVAL '1 DAY'
 ORDER BY time ASC; ;"""), name=c.host)
         connection.execute('COMMIT;')
 
+        if tuples.rowcount > 0:
+            c.plot_load = True
+        else:
+            c.plot_load = False
+
         vl_load1 = list()
         vl_load5 = list()
         vl_load15 = list()
@@ -76,6 +81,11 @@ WHERE time > NOW() - INTERVAL '1 DAY'
   AND host = :name
 GROUP BY time
 ORDER BY time ASC;"""), name=c.host)
+
+        if tuples.rowcount > 0:
+            c.plot_cpu = True
+        else:
+            c.plot_cpu = False
 
         rows = tuples.fetchall()
 

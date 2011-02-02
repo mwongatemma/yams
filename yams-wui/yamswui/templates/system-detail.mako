@@ -12,10 +12,7 @@
     <div id="load" style="width:600px;height:300px;">
     </div>
 
-    <button id="reset-cpu">Reset</button>
-    <div id="cpu" style="width:600px;height:300px;">
-    </div>
-
+  % if c.plot_load is True:
     <script type="text/javascript" charset="utf-8">
       var options_load = {
           title: 'Load',
@@ -100,7 +97,13 @@
 
       document.observe('dom:loaded', myDraw);
     </script>
+  % endif
 
+    <button id="reset-cpu">Reset</button>
+    <div id="cpu" style="width:600px;height:300px;">
+    </div>
+
+  % if c.plot_cpu is True:
     <script type="text/javascript" charset="utf-8">
       var options_cpu = {
           title: 'Processor Utilization',
@@ -217,5 +220,6 @@
 
       document.observe('dom:loaded', myDraw);
     </script>
+  % endif
   </body>
 </html>
