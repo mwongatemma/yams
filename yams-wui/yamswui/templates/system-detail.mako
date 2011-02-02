@@ -1,11 +1,11 @@
-<!doctype html>
-<html>
-  <head>
+<%inherit file="/base.mako" />
+
+<%def name="head_tags()">
     <title>YAMS: ${c.host}</title>
     <script type="text/javascript" src="/js/prototype-1.6.0.2.js"></script>
     <script type="text/javascript" src="/js/flotr-0.2.0-alpha.js"></script>
-  </head>
-  <body>
+</%def>
+
     <h1>System Details: ${c.host}</h1>
 
     <button id="reset-load">Reset</button>
@@ -221,5 +221,3 @@
       document.observe('dom:loaded', myDraw);
     </script>
   % endif
-  </body>
-</html>
