@@ -14,10 +14,12 @@ import simplejson as json
 from urllib import urlencode
 from httplib import HTTPConnection
 from threading import Lock, Thread
-from time import sleep
+from time import localtime, sleep
 import random
+import re
 
 from sqlalchemy import create_engine
+from sqlalchemy.exc import ProgrammingError
 
 class MyQueue:
     def __init__(self, verbose):
@@ -64,6 +66,8 @@ class MyThread(Thread):
         self.random = random.Random()
         self.random.seed()
 
+        self.pg_regex = re.compile('^(.*?)-.*$')
+
     def process(self, data):
         if self.verbose:
             print json.dumps(data, sort_keys=True, indent=4)
@@ -80,7 +84,8 @@ class MyThread(Thread):
             # Depending on the plugin there may be meta data to capture.
             meta_columns = ''
             if plugin == 'postgresql':
-                meta_columns = ', database, schemaname, tablename, indexname'
+                meta_columns = ', database, schemaname, tablename, ' \
+                               'indexname, metric'
 
             # Convert json arrays into postgres arrays.
             dsnames = list()
@@ -93,24 +98,9 @@ class MyThread(Thread):
             for val in datum['values']:
                 values.append('%g' % val)
 
-            # Append meta data value if appropriate.
-            meta_values = ''
-            if plugin == 'postgresql':
-                if 'schema' in datum:
-                    schemaname = datum['schema']
-                else:
-                    schemaname = 'NULL'
-                if 'table' in datum:
-                    tablename = datum['table']
-                else:
-                    tablename = 'NULL'
-                if 'index' in datum:
-                    indexname = datum['index']
-                else:
-                    indexname = 'NULL'
-                meta_values = ', \'%s\', \'%s\', \'%s\', \'%s\'' % \
-                        (datum['database'], schemaname, tablename,
-                         indexname)
+            ts = localtime(datum['time'])
+            partition_table = 'vl_%s_%d%02d%02d' % (plugin, ts.tm_year,
+                                                    ts.tm_mon, ts.tm_mday)
 
             # Convert empty strings to NULL.
             if datum['plugin_instance'] == '':
@@ -123,14 +113,44 @@ class MyThread(Thread):
             else:
                 type_instance = '\'%s\'' % datum['type_instance']
 
+                if plugin == 'postgresql':
+                    # PostgreSQL data specific.
+                    match = re.match(self.pg_regex, datum['type_instance'])
+                    metric = match.group(1)
+                    partition_table += '_'
+                    partition_table += metric
+
+            # Append meta data value if appropriate.
+            meta_values = ''
+            if plugin == 'postgresql':
+                if 'schema' in datum:
+                    schemaname = '\'%s\'' % datum['schema']
+                else:
+                    schemaname = 'NULL'
+                if 'table' in datum:
+                    tablename = '\'%s\'' % datum['table']
+                else:
+                    tablename = 'NULL'
+                if 'index' in datum:
+                    indexname = '\'%s\'' % datum['index']
+                else:
+                    indexname = 'NULL'
+                meta_values = ', \'%s\', %s, %s, %s, \'%s\'' % \
+                        (datum['database'], schemaname, tablename,
+                         indexname, metric)
+
             # TODO: Is there a way to parameterize the values as opposed to
             # building it 100% on the fly?
+
+            # Use WITH TIME ZONE otherwise the time is adjusted to GMT and will
+            # fails the check constraints on "time" since they WITHOUT TIME
+            # ZONE.
             sql = \
-"""INSERT INTO vl_%s (time, interval, host, plugin, plugin_instance, type,
+"""INSERT INTO %s (time, interval, host, plugin, plugin_instance, type,
                       type_instance, dsnames, dstypes, values%s)
-VALUES (TIMESTAMP WITH TIME ZONE \'epoch\' + %s * INTERVAL \'1 second\', %s, \
-        \'%s\', \'%s\', %s, \'%s\', %s, \'{%s}\', \'{%s}\', \
-        \'{%s}\'%s);""" % (plugin, meta_columns, datum['time'],
+VALUES (TIMESTAMP WITH TIME ZONE \'EPOCH\' + %s * INTERVAL \'1 SECOND\',
+        %s, \'%s\', \'%s\', %s, \'%s\', %s, \'{%s}\', \'{%s}\',
+        \'{%s}\'%s);""" % (partition_table, meta_columns, datum['time'],
                     datum['interval'], datum['host'], plugin,
                     plugin_instance, datum['type'],
                     type_instance, ', '.join(dsnames),
@@ -141,15 +161,84 @@ VALUES (TIMESTAMP WITH TIME ZONE \'epoch\' + %s * INTERVAL \'1 second\', %s, \
             try:
                 connection.execute('BEGIN;')
                 # Yeah, postgres doesn't technically support READ UNCOMMITTED
-                # but maybe one day...
+                # so changing the isolation level for performance reasons is
+                # pointless, but maybe one day...
                 #connection.execute('SET TRANSACTION ISOLATION LEVEL ' \
                         #'READ UNCOMMITTED;')
-                connection.execute(sql)
+
+                # Optimistic behavior, assume the partitioned table exists.  If
+                # the INSERT fails, assume the partitioned table doesn't exist
+                # and create them as needed.
+                try:
+                    connection.execute(sql)
+                except ProgrammingError, exc:
+                    # Create the partitioned table if it doesn't exist.  Tables
+                    # are partitioned by day.
+
+                    # FIXME: Why isn't this a NoSuchTableError when the INSERT
+                    # fails?
+
+                    connection.execute('ROLLBACK;')
+
+                    connection.execute('BEGIN;')
+
+                    # Calculate dates for the CHECK constraint.
+                    result = connection.execute('SELECT (TIMESTAMP WITH ' \
+                            'TIME ZONE \'EPOCH\' + %s * INTERVAL ' \
+                            '\'1 SECOND\')::DATE;' % datum['time'])
+                    startdate = result.scalar()
+
+                    result = connection.execute('SELECT \'%s\'::DATE + ' \
+                            'INTERVAL \'1 DAY\';' % startdate)
+                    enddate = result.scalar()
+
+                    if plugin == 'postgresql':
+                        # PostgreSQL data specific.
+                        extra_check = 'CHECK (metric = \'%s\'),' % (metric)
+                    else:
+                        extra_check = ''
+
+                    sql = \
+"""CREATE TABLE %s (
+    %s
+    CHECK (time >= '%s'::TIMESTAMP WITHOUT TIME ZONE
+       AND time < '%s'::TIMESTAMP WITHOUT TIME ZONE)
+) INHERITS(vl_%s);""" % (partition_table, extra_check, startdate, enddate,
+                         plugin)
+                    # Might be fighting with another thread to create the
+                    # table.  If an exception is thrown, just try inserting the
+                    # data.
+                    try:
+                        connection.execute(sql)
+                        if plugin == 'cpu':
+                            connection.execute( \
+                                    'CREATE INDEX ON %s (time, host, ' \
+                                    'type_instance, plugin_instance);' % \
+                                    partition_table)
+                        elif plugin in ['memory', 'vmem']:
+                            connection.execute( \
+                                    'CREATE INDEX ON %s (time, host, ' \
+                                    'type_instance);' % partition_table)
+                        else:
+                            connection.execute( \
+                                    'CREATE INDEX ON %s (time, host);' % \
+                                    partition_table)
+                        connection.execute('GRANT SELECT ON %s TO yams;' % \
+                                partition_table)
+                    except Exception, e:
+                        connection.execute('ROLLBACK;')
+                        # Sleep a few seconds to make sure the table, indexes
+                        # and grants complete.
+                        sleep(3)
+                        connection.execute('BEGIN;')
+                    # Try the INSERT again.
+                    connection.execute(sql)
+                except Exception, e:
+                    raise
                 connection.execute('COMMIT;')
             except Exception, e:
                 connection.execute('ROLLBACK;')
                 print e
-                sys.exit(1)
             connection.close()
 
     def run(self):
