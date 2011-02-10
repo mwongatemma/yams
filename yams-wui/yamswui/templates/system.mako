@@ -11,10 +11,12 @@
     </p>
     <hr/>
     <p>
-      <table>
+      <table border="1">
+        <th>Host</th><th>Logical Processors</th>
       % for system in c.systems:
         <tr>
-          <td><a href="/system/detail/${system}">${system}</a></td>
+          <td><a href="/system/detail/${system.name}">${system.name}</a></td>
+          <td>${system.lprocs}</a></td>
         </tr>
       % endfor
       </table>

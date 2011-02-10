@@ -26,18 +26,32 @@ class SystemController(BaseController):
 
     def detail(self, id):
         c.host = id
+
+        connection = Session.connection()
+        connection.execute('BEGIN;')
+        lprocs = connection.execute(text(
+                'SELECT lprocs FROM systems WHERE name = :host;'),
+                host=id).scalar()
+        connection.execute('COMMIT;')
+
+        if lprocs > 1:
+            c.lprocs = range(lprocs)
+        else:
+            c.lprocs = list()
+
         return render('/system-detail.mako')
 
     def index(self):
         connection = Session.connection()
-        connection.execute('BEGIN;')
-        tuples = connection.execute('SELECT name FROM systems ORDER BY name;')
-        connection.execute('COMMIT;')
-        connection.close()
 
-        c.systems = list()
-        for tuple in tuples:
-            c.systems.append(tuple['name'])
+        connection.execute('BEGIN;')
+        tuples = connection.execute(
+"""SELECT name, lprocs
+FROM systems
+ORDER BY name;""")
+        connection.execute('COMMIT;')
+
+        c.systems = tuples.fetchall()
 
         return render('/system.mako')
 
@@ -49,6 +63,5 @@ class SystemController(BaseController):
                 text('INSERT INTO systems (name) VALUES (:name);'),
                 name=request.params['name'])
         connection.execute('COMMIT;')
-        connection.close()
 
         redirect(url(controller='system', action='index'))
