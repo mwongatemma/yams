@@ -14,7 +14,7 @@ import simplejson as json
 from urllib import urlencode
 from httplib import HTTPConnection
 from threading import Lock, Thread
-from time import localtime, sleep
+from time import ctime, localtime, sleep, time
 import random
 import re
 
@@ -22,12 +22,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import ProgrammingError
 
 class MyQueue:
-    def __init__(self, verbose):
+    def __init__(self, verbose, stats):
         self.verbose = verbose
+        self.stats = stats
 
         self.count = 0
+        self.encount = 0
+        self.decount = 0
         self.lock = Lock()
         self.queue = list()
+        if stats:
+            self.laststat = time()
 
     def dequeue(self):
         self.lock.acquire()
@@ -35,12 +40,16 @@ class MyQueue:
             if self.count > 0:
                 data = self.queue.pop(0)
                 self.count -= 1
+                self.decount += 1
                 if self.verbose:
                     print 'dequeue: %d' % self.count
             else:
                 data = None
         finally:
             self.lock.release()
+
+        if self.stats:
+            self.log_stats()
         return data
 
     def enqueue(self, data):
@@ -48,10 +57,27 @@ class MyQueue:
         try:
             self.queue.append(data)
             self.count += 1
+            self.encount += 1
             if self.verbose:
                 print 'enqueue: %d' % self.count
         finally:
             self.lock.release()
+
+        if self.stats:
+            self.log_stats()
+
+    def log_stats(self):
+        curtime = time()
+        if curtime < self.laststat + 60:
+            return
+        print '%s %d queued data' % (ctime(), self.count)
+        print '%s %0.1f enqueues per min' % (ctime(),
+                self.encount / ((curtime - self.laststat) / 60.0))
+        print '%s %0.1f dequeues per min' % (ctime(),
+                self.decount / ((curtime - self.laststat) / 60.0))
+        self.laststat = curtime
+        self.encount = 0
+        self.decount = 0
 
 class MyThread(Thread):
     def __init__(self, queue, engine, verbose):
@@ -257,6 +283,7 @@ VALUES (TIMESTAMP WITH TIME ZONE \'EPOCH\' + %s * INTERVAL \'1 SECOND\',
 
 class MyHandler(BaseHTTPRequestHandler):
     queue = None
+    verbose = False
 
     def do_HEAD(self):
         self.send_response(200)
@@ -276,6 +303,10 @@ class MyHandler(BaseHTTPRequestHandler):
         data = self.rfile.read(length)
         self.queue.enqueue(data)
 
+    def log_message(self, format, *args):
+        if self.verbose:
+            print format % (args)
+
 def main():
     parser = OptionParser(usage="usage: %prog [options]")
     parser.add_option('-l', '--listener', help='listener port (default 8888)')
@@ -286,6 +317,8 @@ def main():
             help='postgres connection pool size (default 10)')
     parser.add_option('--pgport', help='postgres port (default 5432)')
     parser.add_option('--pguser', help='postgres user (default collectd)')
+    parser.add_option('-s', '--stats', action='store_true', default=False,
+                      help='output queue statistics')
     parser.add_option('-v', '--verbose', action='store_true', default=False,
                       help='verbose output')
     parser.add_option('-w', '--workers', help='number of threads (default 1)')
@@ -296,6 +329,7 @@ def main():
     uri = '/collectd/'
 
     verbose = options.verbose
+    stats = options.stats
 
     if not options.pghost:
         parser.error('database hostname must be specified')
@@ -331,10 +365,12 @@ def main():
         workers = 1
 
     try:
-        queue = MyQueue(verbose)
+        queue = MyQueue(verbose, stats)
 
         myh = MyHandler
         myh.queue = queue
+        myh.verbose = verbose
+        myh.stats = stats
 
         dsnname = 'postgresql://%s@%s' % (pguser, pghost)
         if pgport:
