@@ -37,7 +37,7 @@ def code_load(host):
               sensibility: 100,
               trackDecimals: 2,
               trackFormatter: function(obj) {
-                  return myDateFormatter(obj.x) +', ' + obj.y;
+                  return myDateFormatter(obj.x) + ', ' + obj.y;
               }
           },
           selection: { mode: 'x' }
@@ -47,8 +47,9 @@ def code_load(host):
           return label;
       }
 
-      function myDateFormatter(ctime) {
-          myDate = Date(ctime);
+      function myDateFormatter(mytime) {
+          myDate = new Date();
+          myDate.setTime(mytime);
           return myDate.toLocaleString();
       }
 
