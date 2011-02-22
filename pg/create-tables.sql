@@ -5,7 +5,7 @@ SET search_path TO collectd;
 
 -- Parent table
 CREATE TABLE value_list (
-  time TIMESTAMP NOT NULL,
+  time TIMESTAMP WITH TIME ZONE NOT NULL,
   interval INTEGER NOT NULL,
   host VARCHAR(64) NOT NULL,
   plugin VARCHAR(64) NOT NULL,

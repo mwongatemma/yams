@@ -14,7 +14,7 @@ import simplejson as json
 from urllib import urlencode
 from httplib import HTTPConnection
 from threading import Lock, Thread
-from time import ctime, localtime, sleep, time
+from time import ctime, gmtime, sleep, time
 import random
 import re
 
@@ -124,7 +124,7 @@ class MyThread(Thread):
             for val in datum['values']:
                 values.append('%g' % val)
 
-            ts = localtime(datum['time'])
+            ts = gmtime(datum['time'])
             partition_table = 'vl_%s_%d%02d%02d' % (plugin, ts.tm_year,
                                                     ts.tm_mon, ts.tm_mday)
 
@@ -209,9 +209,10 @@ VALUES (TIMESTAMP WITH TIME ZONE \'EPOCH\' + %s * INTERVAL \'1 SECOND\',
                     connection.execute('BEGIN;')
 
                     # Calculate dates for the CHECK constraint.
-                    result = connection.execute('SELECT (TIMESTAMP WITH ' \
+                    result = connection.execute('SELECT ((TIMESTAMP WITH ' \
                             'TIME ZONE \'EPOCH\' + %s * INTERVAL ' \
-                            '\'1 SECOND\')::DATE;' % datum['time'])
+                            '\'1 SECOND\') AT TIME ZONE \'UTC\')::DATE;' % \
+                            datum['time'])
                     startdate = result.scalar()
 
                     result = connection.execute('SELECT \'%s\'::DATE + ' \
@@ -227,8 +228,8 @@ VALUES (TIMESTAMP WITH TIME ZONE \'EPOCH\' + %s * INTERVAL \'1 SECOND\',
                     sql = \
 """CREATE TABLE %s (
     %s
-    CHECK (time >= '%s'::TIMESTAMP WITHOUT TIME ZONE
-       AND time < '%s'::TIMESTAMP WITHOUT TIME ZONE)
+    CHECK (time >= '%s'::TIMESTAMP AT TIME ZONE 'UTC'
+       AND time < '%s'::TIMESTAMP AT TIME ZONE 'UTC')
 ) INHERITS(vl_%s);""" % (partition_table, extra_check, startdate, enddate,
                          plugin)
                     # Might be fighting with another thread to create the
