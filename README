@@ -1,0 +1,28 @@
+YAMS - Yet Another Monitoring System
+
+YAMS is designed to be a long term trending system capable of handling large
+volumes of data.  It leverages other open source software such as collectd and
+Postgres.  There are four main components: SUM, ETL, DW and WUI.
+
+System Under Monitor (SUM)
+
+The SUM is a system that is monitored by collectd.  http://collectd.org/
+
+Extract, Load, Transform (ETL)
+
+The ETL is a custom built program that is specifically designed to transform
+collectd JSON formatted data from the write_http module and load it into a
+relational database management system.
+
+Data Warehouse (DW)
+
+The DW is the PostgreSQL relational database management system.
+http://www.postgresql.org/
+
+Web User Interface (WUI)
+
+The WUI is an application built on Pylons using Flotr, a JavaScript Plotting
+Library.  http://pylonshq.com/ http://solutoire.com/flotr/
+
+See the user guide (yams-user-guide.pdf) for more information on how to use
+YAMS.
