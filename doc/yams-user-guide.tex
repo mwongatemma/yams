@@ -1,0 +1,339 @@
+\documentclass[a4paper,twoside,12pt]{article}
+
+\usepackage{url}
+\usepackage{listings}
+
+\title{YAMS: Yet Another Monitoring System User Guide}
+\author{Emma, Inc.}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+\textbf{YAMS} is a monitoring system.  It is composed of four main components:
+\begin{enumerate}
+  \item System Under Monitor (SUM)
+  \item Extract, Load, Transform (ETL)
+  \item Data Warehouse (DW)
+  \item Web User Interface (WUI)
+\end{enumerate}
+
+Some words on expectations.
+
+Take a modern Linux based operating system with 128 logical processors.  With
+8 data points per logical processor (idle, interrupt, nice, softirq, steal,
+system, user, and wait) and a sample interval of 60 seconds this results in
+1,024 data points per sample interval.  The target for YAMS is many orders of
+magnitude higher than this.
+
+Now take a Postgres database with 500,000 tables.  Selecting all the columns
+from \textit{pg\_stat\_all\_tables} and \textit{pg\_statio\_all\_tables}
+results in 22 data points per table, or 11,000,000 data points per sample
+interval.  The goal of YAMS is to be able to handle and analyze data sets of
+this magnitude.
+
+\section{Installation}
+
+This section describes the software required by \textbf{YAMS}.
+
+\begin{enumerate}
+  \item PostgreSQL\footnote{\url{http://www.postgresql.org/}} needs to be
+        installed onto the system to be used for the data
+        warehouse.\footnote{The Postgres wiki has installation notes for
+        various platforms:
+        \url{http://wiki.postgresql.org/wiki/Detailed_installation_guides}} It
+        is recommended that this system is a dedicated resource for the data
+        warehouse.  \textbf{YAMS} was proofed against version 9.0 of PostgreSQL
+        but there is no reason to not use an older version at the time of this
+        writing.  This guide leaves it up to the user to determine whether to
+        install PostgreSQL from pre-built packages or from source code.
+  \item The \textbf{YAMS} ETL is a Python program in the \textbf{YAMS}
+        \texttt{etl/} directory.  There is currently no official release of
+        \textbf{YAMS}.  The source code is available at
+        \url{http://github.com/myemma/yams} via \texttt{git} or downloading a
+        snapshot of the source.  It is recommended to install the \textbf{YAMS}
+        ETL on a dedicated system.
+  \item \textbf{collectd}\footnote{\url{http://www.collectd.org/}} is a system
+        statistics collection daemon used on the systems under monitor.  At the
+        time of this writing \textbf{YAMS} requires the use of a forked
+        version\footnote{Two sets of changes have been submitted back to the
+        \textbf{collectd} community:
+        \url{http://mailman.verplant.org/pipermail/collectd/2011-January/004339.html}
+        and
+        \url{http://mailman.verplant.org/pipermail/collectd/2011-January/004342.html}}
+        of \textbf{collectd} 4.10.2 that is available via git or by downloading
+        a snapshot of the source at
+        \url{https://github.com/mwongatemma/collectd/tree/yams}.
+        \textbf{collectd} generally needs to be installed onto the system under
+        monitor.  The only exception covered in this documentation will be when
+        using the \textit{postgresql} plugin.  Configuring, compiling, and
+        installation instructions are in the \textbf{collectd} README file or
+        online at
+        \url{https://github.com/mwongatemma/collectd/blob/yams/README}.
+
+\end{enumerate}
+
+\section{Setup}
+
+\subsection{PostgreSQL for the Data Warehouse}
+
+Familiarity with how to administer and use PostgreSQL is helpful for this
+section.
+
+A PostgreSQL instance may need to be created depending on the operating system
+used for the data warehouse.  If an instance needs to be created it is
+recommended to use the database administrator operating system user, which is
+typically \texttt{postgres}.  For example from the shell command line:
+\lstset{language=sh}
+\begin{lstlisting}
+initdb /opt/pgdata
+\end{lstlisting}
+
+There are two PostgreSQL roles\footnote{A \textit{role} is also known as a
+PostgreSQL database user}, \textit{collectd} and \textit{yams}, that are used
+by \textbf{YAMS}.  The \textit{collectd} user is used by the \textbf{YAMS} ETL
+to load data into the data warehouse.  This data is loaded into tables under
+the \textit{collectd} schema.  The \textit{yams} user is used by the WUI to
+query the data warehouse.  There is a \textit{yams} schema for tables
+specifically used by the WUI.  These roles can be created by the database
+administrator operating system user using the shell command line:
+\lstset{language=sh}
+\begin{lstlisting}
+createuser -DSRP collectd
+createuser -DSRP yams
+\end{lstlisting}
+
+A database needs to be created for \textbf{YAMS}.  The recommendation is to
+call it \textit{yams} or \textit{collectd} (\textit{collectd} will be used in
+this document), and to make it owned by the PostgreSQL role \textit{collectd}.
+The database can be created on the shell command line:
+\lstset{language=sh}
+\begin{lstlisting}
+createdb -O collectd collectd
+\end{lstlisting}
+
+It is recommended to create separate schemas for the \textit{collectd}'s and
+\textit{yams}'s roles.  The database administrator operating system user can
+create them from the command line:
+\lstset{language=sh}
+\begin{lstlisting}
+psql -d collectd \
+     -c "CREATE SCHEMA AUTHORIZATION collectd;"
+psql -d collectd -c "CREATE SCHEMA AUTHORIZATION yams;"
+\end{lstlisting}
+
+The PostgreSQL role \textit{yams} needs read access to the tables in the
+\textit{collectd} schema.  The database administrator operating system user can
+allow this from the command line:
+\begin{lstlisting}
+psql -d collectd -c "GRANT USAGE ON SCHEMA collectd TO yams;"
+\end{lstlisting}
+
+The default PostgreSQL search path needs to be changed for WUI role yams now
+that their these schemas have been created.
+\lstset{language=sh}
+\begin{lstlisting}
+psql -d collectd \
+     -c "ALTER USER yams
+         SET search_path
+         TO \"\$user\",collectd,public;"
+\end{lstlisting}
+
+The default tables need to be created for the \textit{collectd} schema.  Run
+the script included from the \textbf{YAMS} source to create these table as the
+\textit{collectd} user:
+\lstset{language=sh}
+\begin{lstlisting}
+psql -d collectd -U collectd \
+     -f pg/create-tables-collectd.sql
+\end{lstlisting}
+
+The \texttt{pg\_hba.conf} file needs to be modified to allow connections from
+the \textbf{YAMS} ETL system.
+
+The \texttt{postgresql.conf} file needs to be modified to enable the TCP/IP
+listener.  While it is against recommendations, if the ETL is run on the same
+system as the data warehouse then the ETL can connect using a Unix-domain
+socket.
+
+\subsection{collectd}
+
+The \textit{write\_http} output plugin must be enabled in order to send data to
+the \textbf{YAMS} ETL in the \texttt{/opt/collectd/etc/collectd.conf} file:
+\lstset{language=xml}
+\begin{lstlisting}
+LoadPlugin write_http
+<Plugin write_http>
+    <URL "http://etl_hostname:8888/">
+        Format "JSON"
+    </URL>
+</Plugin>
+\end{lstlisting}
+
+None of the other output plugins are required for use with \textbf{YAMS} and
+may be enabled as desired.  Any other plugin can be enabled.  See the
+\textbf{collectd} documentation for details on the plugins
+available.\footnote{\url{http://www.collectd.org/documentation.shtml}}  The
+\textit{postgresql} plugin has special considerations detailed below.
+
+\subsubsection{\textit{postgresql} plugin tips}
+
+\textbf{YAMS} was specifically designed for monitoring PostgreSQL statistics.
+The following examples show how to monitor database, table and index
+statistics but continue to refer to the \textit{postgresql} plugin
+documentation for an explanation of
+parameters\footnote{\url{http://collectd.org/documentation/manpages/collectd.conf.5.shtml#plugin_postgresql}}.
+
+Enable the \textit{postgresql} plugin:
+\lstset{language=xml}
+\begin{lstlisting}
+LoadPlugin postgresql
+\end{lstlisting}
+
+With the modifications to the \textbf{collectd} \textit{postgresql} plugin we
+can do slightly more meaningful queries.  Specifically it is now possible to
+query the database, schema name, table name, and index name as part of the
+query as meta data to the statistics retrieved.  For example the database
+statistics can be collected for all databases in a PostgreSQL instance with a
+single query using the following configuration:
+\lstset{language=xml}
+\begin{lstlisting}
+<Plugin postgresql>
+    <Query stat_database>
+        Statement "SELECT datname, numbackends,
+       xact_commit, xact_rollback,
+       blks_read, blks_hit
+FROM pg_stat_database;"
+
+        <Result>
+            Type gauge
+            InstancePrefix "numbackends"
+            InstancesFrom "datname"
+            ValuesFrom "numbackends"
+        </Result>
+        <Result>
+            Type counter
+            InstancePrefix "xact_rollback"
+            InstancesFrom "datname"
+            ValuesFrom "xact_rollback"
+        </Result>
+        <Result>
+            Type counter
+            InstancePrefix "xact_commit"
+            InstancesFrom "datname"
+            ValuesFrom "xact_commit"
+        </Result>
+        <Result>
+            Type counter
+            InstancePrefix "blks_read"
+            InstancesFrom "datname"
+            ValuesFrom "blks_read"
+        </Result>
+    </Query>
+
+    <Database some_pg_database>
+        Host "some_pg_host"
+        User "postgres"
+        Query stat_database
+        DatabasenameColumn 0
+    </Database>
+</Plugin>
+\end{lstlisting}
+
+Examples will be included in the source code distribution's \texttt{contrib/}
+directory to show how to get table and index statistics.  Other examples will
+show to collect statistics to determine table bloat, monitor transaction age
+and vacuum efficiency.
+
+\section{Get Running Quickly}
+
+\begin{enumerate}
+  \item Start the PostgreSQL database on the data warehouse system.  There may
+        be init scripts available depending on the operation system installed
+        on the data warehouse system.  Otherwise PostgreSQL can be started on
+        the command line using the database administrator operating system
+        account:
+        \lstset{language=sh}
+        \begin{lstlisting}
+pg_ctl -D /opt/pgdata start
+        \end{lstlisting}
+  \item Start the \textbf{YAMS} ETL program:
+        \lstset{language=sh}
+        \begin{lstlisting}
+etl/yams-etl.py --pghost dw_hostname
+        \end{lstlisting}
+  \item Start the \textbf{collectd} daemon (may or may not need to be root
+        user):
+        \lstset{language=sh}
+        \begin{lstlisting}
+/opt/collectd/sbin/collectd
+        \end{lstlisting}
+\end{enumerate}
+
+\section{Components}
+
+This section describes each component in more detail than the previous section.
+
+\subsection{PostgreSQL}
+
+The database schema design takes advantage of table inheritance to physically
+partition data.  This is how the parent table is defined:
+\lstset{language=sql}
+\begin{lstlisting}
+CREATE TABLE value_list (
+    time TIMESTAMP WITH TIME ZONE NOT NULL,
+    interval INTEGER NOT NULL,
+    host VARCHAR(64) NOT NULL,
+    plugin VARCHAR(64) NOT NULL,
+    plugin_instance VARCHAR(64),
+    type VARCHAR(64) NOT NULL,
+    type_instance VARCHAR(64),
+    dsnames VARCHAR(512)[] NOT NULL,
+    dstypes VARCHAR(8)[] NOT NULL,
+    values NUMERIC[] NOT NULL
+);
+\end{lstlisting}
+
+All timestamps are stored in the database in UTC.
+
+Each \textbf{collectd} plugin partitions the \textit{value\_list} table by day.
+The \textit{postgresql} plugin take things further because of the potentially
+high volume of data that can be produced by a PostgreSQL database under
+monitor.  The \textit{postgresql} plugin inherits the \texttt{value\_list} and
+augments it as:
+
+\lstset{language=sql}
+\begin{lstlisting}
+CREATE TABLE vl_postgresql (
+    database VARCHAR(64) NOT NULL,
+    schemaname VARCHAR(64),
+    tablename VARCHAR(64),
+    indexname VARCHAR(64),
+    metric VARCHAR(64) NOT NULL,
+    CHECK (plugin = 'postgresql')
+) INHERITS (value_list);
+\end{lstlisting}
+
+The \textit{postgresql} plugin creates partition tables based on metric per
+day.  Using PostgreSQL terminology the \texttt{database}, \texttt{schemaname},
+\texttt{tablename} and \texttt{indexename} are self-explanatory.  The
+\texttt{metric} column is the name of the particular statistic being collected.
+For example, the seq\_scan column from the pg\_stat\_all\_tables table would
+set the \texttt{metric} column to `seq\_scan'.
+
+\subsection{ETL}
+
+The \textbf{YAMS} ETL is a custom multi-threaded Python program.  It uses
+\textit{BaseHTTPServer} to listen for HTTP POST requests from
+\textbf{collectd} and queues up the JSON data sent to be processed.  A
+pre-created thread pool processes the data off the queue by transforming the
+JSON objects into SQL INSERT statements and loads the data into the data
+warehouse using the database connection pooling capabilities of
+SQLAlchemy\footnote{\url{http://www.sqlalchemy.org/}}.
+
+The database partitioning is also handled in the \textbf{YAMS} ETL.
+
+\end{document}
