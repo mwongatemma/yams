@@ -94,7 +94,56 @@ class MyThread(Thread):
 
         self.pg_regex = re.compile('^(.*?)-.*$')
 
+    def create_partitioned_table(self, connection, partition_table, plugin,
+                                 collectd_time, metric):
+        # Calculate dates for the CHECK constraint.
+        result = connection.execute('SELECT ((TIMESTAMP WITH TIME ZONE ' \
+                '\'EPOCH\' + %s * INTERVAL \'1 SECOND\') AT TIME ZONE ' \
+                '\'UTC\')::DATE;' % collectd_time)
+        startdate = result.scalar()
+
+        result = connection.execute( \
+                'SELECT \'%s\'::DATE + INTERVAL \'1 DAY\';' % startdate)
+        enddate = result.scalar()
+
+        if plugin == 'postgresql':
+            # PostgreSQL data specific.
+            extra_check = 'CHECK (metric = \'%s\'),' % (metric)
+        else:
+            extra_check = ''
+
+        sql = \
+"""CREATE TABLE %s (
+    %s
+    CHECK (time >= '%s'::TIMESTAMP AT TIME ZONE 'UTC'
+       AND time < '%s'::TIMESTAMP AT TIME ZONE 'UTC')
+) INHERITS(vl_%s);""" % (partition_table, extra_check, startdate, enddate,
+                         plugin)
+        # Might be fighting with another thread to create the table.  If an
+        # exception is thrown, assume another table has created the table.
+        # Sleep for a little while before trying to insert data.
+        try:
+            connection.execute(sql)
+            connection.execute('GRANT SELECT ON %s TO yams;' % \
+                                partition_table)
+            if plugin == 'cpu':
+                connection.execute('CREATE INDEX ON %s (time, host, ' \
+                                   'type_instance, plugin_instance);' % \
+                                   partition_table)
+            elif plugin in ['memory', 'vmem']:
+                connection.execute('CREATE INDEX ON %s (time, host, ' \
+                                   'type_instance);' % partition_table)
+            else:
+                connection.execute('CREATE INDEX ON %s (time, host);' % \
+                                   partition_table)
+        except Exception, e:
+            connection.execute('ROLLBACK;')
+            sleep(8)
+            connection.execute('BEGIN;')
+
     def process(self, data):
+        metric = None
+
         if self.verbose:
             print json.dumps(data, sort_keys=True, indent=4)
 
@@ -207,66 +256,19 @@ VALUES (TIMESTAMP WITH TIME ZONE \'EPOCH\' + %s * INTERVAL \'1 SECOND\',
                     connection.execute('ROLLBACK;')
 
                     connection.execute('BEGIN;')
-
-                    # Calculate dates for the CHECK constraint.
-                    result = connection.execute('SELECT ((TIMESTAMP WITH ' \
-                            'TIME ZONE \'EPOCH\' + %s * INTERVAL ' \
-                            '\'1 SECOND\') AT TIME ZONE \'UTC\')::DATE;' % \
-                            datum['time'])
-                    startdate = result.scalar()
-
-                    result = connection.execute('SELECT \'%s\'::DATE + ' \
-                            'INTERVAL \'1 DAY\';' % startdate)
-                    enddate = result.scalar()
-
-                    if plugin == 'postgresql':
-                        # PostgreSQL data specific.
-                        extra_check = 'CHECK (metric = \'%s\'),' % (metric)
-                    else:
-                        extra_check = ''
-
-                    sql = \
-"""CREATE TABLE %s (
-    %s
-    CHECK (time >= '%s'::TIMESTAMP AT TIME ZONE 'UTC'
-       AND time < '%s'::TIMESTAMP AT TIME ZONE 'UTC')
-) INHERITS(vl_%s);""" % (partition_table, extra_check, startdate, enddate,
-                         plugin)
-                    # Might be fighting with another thread to create the
-                    # table.  If an exception is thrown, just try inserting the
-                    # data.
-                    try:
-                        connection.execute(sql)
-                        if plugin == 'cpu':
-                            connection.execute( \
-                                    'CREATE INDEX ON %s (time, host, ' \
-                                    'type_instance, plugin_instance);' % \
-                                    partition_table)
-                        elif plugin in ['memory', 'vmem']:
-                            connection.execute( \
-                                    'CREATE INDEX ON %s (time, host, ' \
-                                    'type_instance);' % partition_table)
-                        else:
-                            connection.execute( \
-                                    'CREATE INDEX ON %s (time, host);' % \
-                                    partition_table)
-                        connection.execute('GRANT SELECT ON %s TO yams;' % \
-                                partition_table)
-                    except Exception, e:
-                        connection.execute('ROLLBACK;')
-                        # Sleep a few seconds to make sure the table, indexes
-                        # and grants complete.
-                        sleep(3)
-                        connection.execute('BEGIN;')
+                    self.create_partitioned_table(connection, partition_table,
+                                                  plugin, datum['time'],
+                                                  metric)
                     # Try the INSERT again.
                     connection.execute(sql)
                 except Exception, e:
+                    print "ERROR: UNHANDLED EXCEPTION"
                     raise
-                connection.execute('COMMIT;')
             except Exception, e:
+                print "BEGIN FAILED"
                 connection.execute('ROLLBACK;')
                 print e
-            connection.close()
+            connection.execute('COMMIT;')
 
     def run(self):
         while True:
@@ -364,6 +366,10 @@ def main():
         workers = int(options.workers)
     else:
         workers = 1
+
+    if workers >= pgpool:
+        print "workers must be less than database pool size"
+        sys.exit(1)
 
     try:
         queue = MyQueue(verbose, stats)
