@@ -13,10 +13,11 @@ from cgi import parse_qs
 import simplejson as json
 from urllib import urlencode
 from httplib import HTTPConnection
-from threading import Lock, Thread
+from threading import Thread
 from time import ctime, gmtime, sleep, time
 import random
 import re
+from Queue import Queue
 
 from sqlalchemy import create_engine
 from sqlalchemy.exc import ProgrammingError
@@ -26,42 +27,27 @@ class MyQueue:
         self.verbose = verbose
         self.stats = stats
 
-        self.count = 0
         self.encount = 0
         self.decount = 0
-        self.lock = Lock()
-        self.queue = list()
+        self.queue = Queue()
         if stats:
             self.laststat = time()
 
     def dequeue(self):
-        self.lock.acquire()
-        try:
-            if self.count > 0:
-                data = self.queue.pop(0)
-                self.count -= 1
-                self.decount += 1
-                if self.verbose:
-                    print 'dequeue: %d' % self.count
-            else:
-                data = None
-        finally:
-            self.lock.release()
+        data = self.queue.get()
+        self.decount += 1
+        if self.verbose:
+            print 'dequeue: %d' % self.queue.qsize()
 
         if self.stats:
             self.log_stats()
         return data
 
     def enqueue(self, data):
-        self.lock.acquire()
-        try:
-            self.queue.append(data)
-            self.count += 1
-            self.encount += 1
-            if self.verbose:
-                print 'enqueue: %d' % self.count
-        finally:
-            self.lock.release()
+        self.queue.put(data)
+        self.encount += 1
+        if self.verbose:
+            print 'enqueue: %d' % self.queue.qsize()
 
         if self.stats:
             self.log_stats()
@@ -70,7 +56,7 @@ class MyQueue:
         curtime = time()
         if curtime < self.laststat + 60:
             return
-        print '%s %d queued data' % (ctime(), self.count)
+        print '%s %d queued data' % (ctime(), self.queue.qsize())
         print '%s %0.1f enqueues per min' % (ctime(),
                 self.encount / ((curtime - self.laststat) / 60.0))
         print '%s %0.1f dequeues per min' % (ctime(),
