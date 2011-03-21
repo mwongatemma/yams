@@ -50,12 +50,22 @@ This section describes the software required by \textbf{YAMS}.
         but there is no reason to not use an older version at the time of this
         writing.  This guide leaves it up to the user to determine whether to
         install PostgreSQL from pre-built packages or from source code.
-  \item The \textbf{YAMS} ETL is a Python program in the \textbf{YAMS}
-        \texttt{etl/} directory.  There is currently no official release of
-        \textbf{YAMS}.  The source code is available at
-        \url{http://github.com/myemma/yams} via \texttt{git} or downloading a
-        snapshot of the source.  It is recommended to install the \textbf{YAMS}
-        ETL on a dedicated system.
+  \item The \textbf{YAMS} ETL consists of two components.  There is a RESTful
+        Web service and an ETL process in the \textbf{YAMS} \texttt{etl/}
+        directory.  The Web service is built with
+        lighttpd\footnote{\url{http://www.lighttpd.net}} supported by
+        Redis\footnote{\url{http://redis.io/}}.  A custom C
+        FastCGI\footnote{\url{http://www.fastcgi.com/}} program processes the
+        incoming HTTP POST data and pushes the data to Redis.  Another program
+        pops the data from Redis, transforms and loads the data in the data
+        warehouse.  The ETL process is a Python program that pops data out of
+        Redis, processes it and loads the resulting data in to the data
+        warehouse.  There is currently no official release of \textbf{YAMS}.
+        The source code is available at \url{http://github.com/myemma/yams} via
+        \texttt{git} or downloading a snapshot of the source.  It is
+        recommended to install the \textbf{YAMS} ETL on a dedicated system.
+        lighttpd and needs to installed the ETL system.  Redis is recommended
+        to be installed on the ETL system but may be installed elsewhere.
   \item \textbf{collectd}\footnote{\url{http://www.collectd.org/}} is a system
         statistics collection daemon used on the systems under monitor.  At the
         time of this writing \textbf{YAMS} requires the use of a forked
@@ -159,6 +169,41 @@ listener.  While it is against recommendations, if the ETL is run on the same
 system as the data warehouse then the ETL can connect using a Unix-domain
 socket.
 
+\subsection{ETL}
+
+Familiarity with setting up lighttpd and FastCGI will help in this section.
+This example points out specific configuration parameters for \textbf{YAMS}.
+Specifically the HTTP port to listen to, how to activate the FastCGI module,
+and how to route all requests to the C FastCGI service.  The three environment
+variables REDIS\_SERVER, REDIS\_PORT, and REDIS\_KEY can be set to specific
+Redis connection parameters.  If not specified the default values will be set
+to what is shown in the example.  The \textit{bin-path} parameters needs to be
+set to where the \textit{yams-etl-fcgi} program is installed.
+
+\lstset{language=clean}
+\begin{lstlisting}
+server.port = 8888
+
+server.modules += ( "mod_fastcgi" )
+
+fastcgi.server = ( "/" =>
+                   ( "etl" =>
+                     (
+                       "socket" => socket_dir + "fastcgi.yams-etl.socket",
+                       "bin-path" => "/usr/local/bin/yams-etl-fcgi",
+                       "bin-environment" =>
+                       (
+                         "REDIS_SERVER" => "localhost",
+                         "REDIS_PORT" => "6379",
+                         "REDIS_KEY" => "yamsetl"
+                       ),
+                       "check-local" => "disable",
+                       "max-procs" => 1,
+                     )
+                   )
+                 )
+\end{lstlisting}
+
 \subsection{collectd}
 
 The \textit{write\_http} output plugin must be enabled in order to send data to
@@ -260,13 +305,13 @@ and vacuum efficiency.
         \begin{lstlisting}
 pg_ctl -D /opt/pgdata start
         \end{lstlisting}
+  \item Start lighttpd:
   \item Start the \textbf{YAMS} ETL program:
         \lstset{language=sh}
         \begin{lstlisting}
-etl/yams-etl.py --pghost dw_hostname
+yams-etl.py --pghost dw_hostname
         \end{lstlisting}
-  \item Start the \textbf{collectd} daemon (may or may not need to be root
-        user):
+  \item Start the \textbf{collectd} daemon:
         \lstset{language=sh}
         \begin{lstlisting}
 /opt/collectd/sbin/collectd
@@ -326,12 +371,12 @@ set the \texttt{metric} column to `seq\_scan'.
 
 \subsection{ETL}
 
-The \textbf{YAMS} ETL is a custom multi-threaded Python program.  It uses
-\textit{BaseHTTPServer} to listen for HTTP POST requests from
-\textbf{collectd} and queues up the JSON data sent to be processed.  A
-pre-created thread pool processes the data off the queue by transforming the
-JSON objects into SQL INSERT statements and loads the data into the data
-warehouse using the database connection pooling capabilities of
+The \textbf{YAMS} ETL is a custom RESTful Web service.  It uses a lighttpd to
+listen for HTTP POST requests from \textbf{collectd} and queues up the incoming
+JSON data by using a C FastCGI progream to pushi it to Redis.  Another program
+pops the data out of Redis and processes the data by transforming the JSON
+objects into SQL INSERT statements and loads the data into the data warehouse
+using the database connection pooling capabilities of
 SQLAlchemy\footnote{\url{http://www.sqlalchemy.org/}}.
 
 The database partitioning is also handled in the \textbf{YAMS} ETL.

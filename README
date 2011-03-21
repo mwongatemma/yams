@@ -10,9 +10,11 @@ The SUM is a system that is monitored by collectd.  http://collectd.org/
 
 Extract, Load, Transform (ETL)
 
-The ETL is a custom built program that is specifically designed to transform
-collectd JSON formatted data from the write_http module and load it into a
-relational database management system.
+The ETL is a custom built application that is specifically designed to
+transform collectd JSON formatted data from the write_http module and load it
+into a relational database management system.  The custon application is built
+with lighttpd (http://www.lighttpd.net/), Redis (http://redis.io/), and FastCGI
+(http://www.fastcgi.com/).
 
 Data Warehouse (DW)
 
