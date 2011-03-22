@@ -58,10 +58,10 @@ This section describes the software required by \textbf{YAMS}.
         FastCGI\footnote{\url{http://www.fastcgi.com/}} program processes the
         incoming HTTP POST data and pushes the data to Redis.  Another program
         pops the data from Redis, transforms and loads the data in the data
-        warehouse.  The ETL process is a Python program that pops data out of
-        Redis, processes it and loads the resulting data in to the data
-        warehouse.  There is currently no official release of \textbf{YAMS}.
-        The source code is available at \url{http://github.com/myemma/yams} via
+        warehouse.  The ETL process is a C program that pops data out of Redis,
+        processes it and loads the resulting data in to the data warehouse.
+        There is currently no official release of \textbf{YAMS}.  The source
+        code is available at \url{http://github.com/myemma/yams} via
         \texttt{git} or downloading a snapshot of the source.  It is
         recommended to install the \textbf{YAMS} ETL on a dedicated system.
         lighttpd and needs to installed the ETL system.  Redis is recommended
@@ -309,7 +309,7 @@ pg_ctl -D /opt/pgdata start
   \item Start the \textbf{YAMS} ETL program:
         \lstset{language=sh}
         \begin{lstlisting}
-yams-etl.py --pghost dw_hostname
+yams-etl --pghost dw_hostname
         \end{lstlisting}
   \item Start the \textbf{collectd} daemon:
         \lstset{language=sh}
@@ -375,9 +375,7 @@ The \textbf{YAMS} ETL is a custom RESTful Web service.  It uses a lighttpd to
 listen for HTTP POST requests from \textbf{collectd} and queues up the incoming
 JSON data by using a C FastCGI progream to pushi it to Redis.  Another program
 pops the data out of Redis and processes the data by transforming the JSON
-objects into SQL INSERT statements and loads the data into the data warehouse
-using the database connection pooling capabilities of
-SQLAlchemy\footnote{\url{http://www.sqlalchemy.org/}}.
+objects into SQL INSERT statements and loads the data into the data warehouse.
 
 The database partitioning is also handled in the \textbf{YAMS} ETL.
 
