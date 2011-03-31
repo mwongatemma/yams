@@ -1,9 +1,4 @@
-A postgres superuser needs to run the user, database and schema creation
-script.  The the collectd user can run the table creation script.
-
-Example:
-
-psql -U postgres -d postgres -f create-user.sql
-psql -U postgres -d postgres -f create-database.sql
-psql -U collectd -d collectd -f create-schema.sql
-psql -U collectd -d collectd -f create-tables.sql
+Run the create-database.sh to create the database.  This shell script defines
+PostgreSQL user names and a tablespace name.  The PostgreSQL DBA still needs to
+create a matching tablespace in the database, which by default is called
+'collectd'.

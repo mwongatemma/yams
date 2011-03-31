@@ -1,8 +1,3 @@
--- Run as collectd user.
-
--- Put all tables into a separate schema from public.
-SET search_path TO collectd;
-
 -- Parent table
 CREATE TABLE value_list (
   time TIMESTAMP WITH TIME ZONE NOT NULL,

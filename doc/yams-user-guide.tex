@@ -108,58 +108,18 @@ by \textbf{YAMS}.  The \textit{collectd} user is used by the \textbf{YAMS} ETL
 to load data into the data warehouse.  This data is loaded into tables under
 the \textit{collectd} schema.  The \textit{yams} user is used by the WUI to
 query the data warehouse.  There is a \textit{yams} schema for tables
-specifically used by the WUI.  These roles can be created by the database
-administrator operating system user using the shell command line:
+specifically used by the WUI.  These roles, schemas, tables and permissions can
+be created by the database administrator operating system user using the
+included shell script:
 \lstset{language=sh}
 \begin{lstlisting}
-createuser -DSRP collectd
-createuser -DSRP yams
+pg/create-database.sh
 \end{lstlisting}
 
-A database needs to be created for \textbf{YAMS}.  The recommendation is to
-call it \textit{yams} or \textit{collectd} (\textit{collectd} will be used in
-this document), and to make it owned by the PostgreSQL role \textit{collectd}.
-The database can be created on the shell command line:
-\lstset{language=sh}
-\begin{lstlisting}
-createdb -O collectd collectd
-\end{lstlisting}
-
-It is recommended to create separate schemas for the \textit{collectd}'s and
-\textit{yams}'s roles.  The database administrator operating system user can
-create them from the command line:
-\lstset{language=sh}
-\begin{lstlisting}
-psql -d collectd \
-     -c "CREATE SCHEMA AUTHORIZATION collectd;"
-psql -d collectd -c "CREATE SCHEMA AUTHORIZATION yams;"
-\end{lstlisting}
-
-The PostgreSQL role \textit{yams} needs read access to the tables in the
-\textit{collectd} schema.  The database administrator operating system user can
-allow this from the command line:
-\begin{lstlisting}
-psql -d collectd -c "GRANT USAGE ON SCHEMA collectd TO yams;"
-\end{lstlisting}
-
-The default PostgreSQL search path needs to be changed for WUI role yams now
-that their these schemas have been created.
-\lstset{language=sh}
-\begin{lstlisting}
-psql -d collectd \
-     -c "ALTER USER yams
-         SET search_path
-         TO \"\$user\",collectd,public;"
-\end{lstlisting}
-
-The default tables need to be created for the \textit{collectd} schema.  Run
-the script included from the \textbf{YAMS} source to create these table as the
-\textit{collectd} user:
-\lstset{language=sh}
-\begin{lstlisting}
-psql -d collectd -U collectd \
-     -f pg/create-tables-collectd.sql
-\end{lstlisting}
+This script also attempts to use a tablespace named 'collectd'.  It is
+currently expected that the PostgreSQL DBA create this tablespace in advance.
+If this tablespace is not created then the default system tablespace will be
+used.
 
 The \texttt{pg\_hba.conf} file needs to be modified to allow connections from
 the \textbf{YAMS} ETL system.

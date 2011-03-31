@@ -144,10 +144,6 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 
 	create_partition_index(conn, plugin, tablename);
 
-	snprintf(sql, SQL_LEN, "GRANT SELECT ON %s TO yams;", tablename);
-	if (do_command(conn, sql) != 0)
-		return 1;
-
 	if (do_command(conn, "COMMIT;") != 0)
 		return 1;
 
