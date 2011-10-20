@@ -15,7 +15,8 @@ requires = [
     'pyramid_debugtoolbar',
     'zope.sqlalchemy',
     'sqlalchemy',
-    'psycopg2'
+    'psycopg2',
+    'uuid',
     ]
 
 setup(name='yams-wui',
