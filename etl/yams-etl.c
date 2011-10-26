@@ -252,13 +252,13 @@ int load(PGconn *conn, json_object *jsono)
 		jo_t = json_object_object_get(jsono, "database");
 		database = json_object_get_string(jo_t);
 
-		jo_t = json_object_object_get(jsono, "schemaname");
+		jo_t = json_object_object_get(jsono, "schema");
 		schemaname = json_object_get_string(jo_t);
 
-		jo_t = json_object_object_get(jsono, "tablename");
+		jo_t = json_object_object_get(jsono, "table");
 		tablename = json_object_get_string(jo_t);
 
-		jo_t = json_object_object_get(jsono, "indexname");
+		jo_t = json_object_object_get(jsono, "index");
 		indexname = json_object_get_string(jo_t);
 
 		strncpy(metric, type_instance, length);
