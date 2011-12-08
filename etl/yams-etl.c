@@ -455,13 +455,13 @@ int main(int argc, char *argv[])
 			{"pgusername", required_argument, NULL, 'U'},
 			{"redis-key", required_argument, NULL, 'd'},
 			{"redis-port", required_argument, NULL, 'p'},
-			{"redis-server", required_argument, NULL, 'h'},
+			{"redis-server", required_argument, NULL, 's'},
 			{"verbose", no_argument, &verbose_flag, 1},
 			{"stats", no_argument, &stats_flag, 'v'},
 			{"workers", required_argument, NULL, 'w'},
 			{0, 0, 0, 0}
 		};
-		c = getopt_long(argc, argv, "?D:d:H:h:P:p:U:vw:", long_options,
+		c = getopt_long(argc, argv, "?D:d:H:P:p:s:U:vw:", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -513,7 +513,7 @@ int main(int argc, char *argv[])
 			options.redis_port = atoi(optarg);
 			break;
 		case 's':
-			options.redis_server =  optarg;
+			options.redis_server = optarg;
 			break;
 		case 'v':
 			verbose_flag = 1;
