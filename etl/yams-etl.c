@@ -255,21 +255,21 @@ int load(PGconn *conn, json_object *jsono)
 
 		jo_t = json_object_object_get(jsono, "schema");
 		p = json_object_get_string(jo_t);
-		if (p == NULL)
+		if (p == NULL || p[0] == '\0')
 			strncpy(schemaname, "NULL", 66);
 		else
 			snprintf(schemaname, 66, "'%s'", p);
 
 		jo_t = json_object_object_get(jsono, "table");
 		p = json_object_get_string(jo_t);
-		if (p == NULL)
+		if (p == NULL || p[0] == '\0')
 			strncpy(tablename, "NULL", 66);
 		else
 			snprintf(tablename, 66, "'%s'", p);
 
 		jo_t = json_object_object_get(jsono, "index");
 		p = json_object_get_string(jo_t);
-		if (p == NULL)
+		if (p == NULL || p[0] == '\0')
 			strncpy(indexname, "NULL", 66);
 		else
 			snprintf(indexname, 66, "'%s'", p);
