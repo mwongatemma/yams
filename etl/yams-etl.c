@@ -39,7 +39,7 @@
 		"VALUES (TIMESTAMP WITH TIME ZONE 'EPOCH' + " \
 				"%d * INTERVAL '1 SECOND',\n" \
 		"        %d, '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',\n" \
-		"        '%s', '%s', '%s', '%s');"
+		"        %s, %s, %s, '%s');"
 
 #define SELECT_DAY0 "SELECT ((TIMESTAMP WITH TIME ZONE 'EPOCH' + %d * " \
 		"INTERVAL '1 SECOND') AT TIME ZONE 'UTC')::DATE;"
@@ -241,10 +241,11 @@ int load(PGconn *conn, json_object *jsono)
 	host = json_object_get_string(jo_t);
 
 	if (strcmp(plugin, "postgresql") == 0) {
+		const char *p;
 		const char *database = NULL;
-		const char *schemaname = NULL;
-		const char *tablename = NULL;
-		const char *indexname = NULL;
+		char schemaname[67];
+		char tablename[67];
+		char indexname[67];
 
 		char *tmp = strstr(type_instance, "-");
 		int length = tmp - type_instance;
@@ -253,13 +254,25 @@ int load(PGconn *conn, json_object *jsono)
 		database = json_object_get_string(jo_t);
 
 		jo_t = json_object_object_get(jsono, "schema");
-		schemaname = json_object_get_string(jo_t);
+		p = json_object_get_string(jo_t);
+		if (p == NULL)
+			strncpy(schemaname, "NULL", 66);
+		else
+			snprintf(schemaname, 66, "'%s'", p);
 
 		jo_t = json_object_object_get(jsono, "table");
-		tablename = json_object_get_string(jo_t);
+		p = json_object_get_string(jo_t);
+		if (p == NULL)
+			strncpy(tablename, "NULL", 66);
+		else
+			snprintf(tablename, 66, "'%s'", p);
 
 		jo_t = json_object_object_get(jsono, "index");
-		indexname = json_object_get_string(jo_t);
+		p = json_object_get_string(jo_t);
+		if (p == NULL)
+			strncpy(indexname, "NULL", 66);
+		else
+			snprintf(indexname, 66, "'%s'", p);
 
 		strncpy(metric, type_instance, length);
 		metric[length] = '\0';
@@ -391,8 +404,8 @@ inline int work(struct opts *options)
 			continue;
 
 		/*
-		 * collectd doesn't actually create 100% compliant JSON objects.  Need to
-		 * manually break out the individual JSON objects from an array type
+		 * json-c doesn't like the array collect creates for some reason.  Need
+		 * to manually break out the individual JSON objects from an array type
 		 * structure before we can actually process the data.
 		 */
 		p1 = reply->element[1]->str;
