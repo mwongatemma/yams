@@ -241,6 +241,8 @@ int load(PGconn *conn, json_object *jsono)
 	host = json_object_get_string(jo_t);
 
 	if (strcmp(plugin, "postgresql") == 0) {
+		struct json_object *json_meta;
+
 		const char *p;
 		const char *database = NULL;
 		char schemaname[67];
@@ -250,24 +252,30 @@ int load(PGconn *conn, json_object *jsono)
 		char *tmp = strstr(type_instance, "-");
 		int length = tmp - type_instance;
 
-		jo_t = json_object_object_get(jsono, "database");
+		/*
+		 * collectd v5.0 starts putting the meta data under "meta" with the
+         * write_httpd plugin.
+		 */
+		json_meta = json_object_object_get(jsono, "meta");
+
+		jo_t = json_object_object_get(json_meta, "database");
 		database = json_object_get_string(jo_t);
 
-		jo_t = json_object_object_get(jsono, "schema");
+		jo_t = json_object_object_get(json_meta, "schema");
 		p = json_object_get_string(jo_t);
 		if (p == NULL || p[0] == '\0')
 			strncpy(schemaname, "NULL", 66);
 		else
 			snprintf(schemaname, 66, "'%s'", p);
 
-		jo_t = json_object_object_get(jsono, "table");
+		jo_t = json_object_object_get(json_meta, "table");
 		p = json_object_get_string(jo_t);
 		if (p == NULL || p[0] == '\0')
 			strncpy(tablename, "NULL", 66);
 		else
 			snprintf(tablename, 66, "'%s'", p);
 
-		jo_t = json_object_object_get(jsono, "index");
+		jo_t = json_object_object_get(json_meta, "index");
 		p = json_object_get_string(jo_t);
 		if (p == NULL || p[0] == '\0')
 			strncpy(indexname, "NULL", 66);
@@ -283,7 +291,6 @@ int load(PGconn *conn, json_object *jsono)
 				(int) timet, interval, host, plugin, plugin_instance, type,
 				type_instance, dsnames, dstypes, values, database, schemaname,
 				tablename, indexname, metric);
-
 	} else {
 		snprintf(partition_table, TABLENAME_LEN, "vl_%s_%d%02d%02d", plugin,
 				gmtm.tm_year + 1900, gmtm.tm_mon + 1, gmtm.tm_mday);
