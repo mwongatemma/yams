@@ -36,7 +36,7 @@ collectd 4.10.2
 fcgi 2.4.0
 hiredis 0.9.2
 lighttpd 1.4.28
-json-c 0.9
+json-c 0.10
 PostgreSQL 9.0
 Pylons 1.0
 Redis 2.2.2
