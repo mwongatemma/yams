@@ -318,7 +318,7 @@ int load(PGconn *conn, json_object *jsono)
 			do_command(conn, "ROLLBACK;");
 			/*
 			 * Assume the CREATE TABLE failed because another threads is in the
-			 * middle of creating that table.  Wait a few seconds and tgry the
+			 * middle of creating that table.  Wait a few seconds and try the
 			 * insert again.
 			 */
 			sleep(3);
