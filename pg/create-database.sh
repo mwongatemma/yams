@@ -40,5 +40,8 @@ psql -U ${WUI_USER} -d ${COLLECTD_DB} \
 			SET search_path TO \"\$user\",${COLLECTD_USER},public;" || exit 1
 
 # Create the default tables.
-psql -U ${COLLECTD_USER} -d ${COLLECTD_DB} \
-		-f create-tables-collectd.sql || exit 1
+psql -U ${COLLECTD_USER} -d ${COLLECTD_DB} << __EOF__
+BEGIN;
+\i create-tables-collectd.sql
+COMMIT;
+__EOF__
