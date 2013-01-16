@@ -48,10 +48,16 @@ int main()
 	}
 
 	while (FCGI_Accept() >= 0) {
+		char *request_method;
+
+		request_method = getenv("REQUEST_METHOD");
+		if (request_method == NULL)
+			continue;
+
 		/* Create a minimal HTTP response. */
 		printf("\r\n");
 
-		if (strcmp(getenv("REQUEST_METHOD"), "POST") == 0) {
+		if (strcmp(request_method, "POST") == 0) {
 			/* Get the POST data. */
 			str = getenv("CONTENT_LENGTH");
 			if (str != NULL)
