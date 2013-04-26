@@ -10,7 +10,7 @@ COLLECTD_USER="collectd"
 WUI_USER="yams"
 COLLECTD_TBLSPACE="collectd"
 
-# Create the users.
+# Create the users, don't exit if they already exist.
 psql -U ${PG_SUPERUSER} -d ${PG_DB} -c "CREATE USER ${COLLECTD_USER};"
 psql -U ${PG_SUPERUSER} -d ${PG_DB} -c "CREATE USER ${WUI_USER};"
 
@@ -18,6 +18,9 @@ psql -U ${PG_SUPERUSER} -d ${PG_DB} -c "CREATE USER ${WUI_USER};"
 psql -U ${PG_SUPERUSER} -d ${PG_DB} \
 		-c "CREATE DATABASE ${COLLECTD_DB} WITH OWNER ${COLLECTD_USER};" \
 		|| exit 1
+
+psql -U ${PG_SUPERUSER} -d ${COLLECTD_DB} \
+		-c "CREATE EXTENSION hstore;" || exit 1
 
 # Create the schemas.
 psql -U ${PG_SUPERUSER} -d ${COLLECTD_DB} \
