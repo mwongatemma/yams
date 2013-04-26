@@ -15,7 +15,7 @@
 #define HOSTNAME_LEN 65
 #define KEY_LEN 255
 
-#define SQL_LEN 1023
+#define SQL_LEN 2047
 
 /* Max length a table name can be in PostgreSQL. */
 #define TABLENAME_LEN 255
@@ -27,19 +27,36 @@
 		"            (time, interval, host, plugin, plugin_instance,\n" \
 		"             type, type_instance, dsnames, dstypes, values)\n" \
 		"VALUES (TIMESTAMP WITH TIME ZONE 'EPOCH' + " \
-				"%d * INTERVAL '1 SECOND',\n" \
-		"        %d, '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');"
+        "%d * INTERVAL '1 SECOND',\n" \
+		"        %d, '%s', '%s', '%s', '%s', '%s',\n" \
+		"        (SELECT array_agg(trim(BOTH '\"' FROM a::TEXT))\n" \
+		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
+		"        (SELECT array_agg(trim(BOTH '\"' FROM a::TEXT))\n" \
+		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
+		"        (SELECT array_agg(a::TEXT::NUMERIC)\n" \
+		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z));"
 
-#define INSERT_STATEMENT_POSTGRESQL \
+/*
+ * Note that nested JSON might not translate to HSTORE but not expecting
+ * collectd to nest json.  Also some hoops for convert JSON arrays into
+ * Postgres arrays.
+ */
+#define INSERT_STATEMENT_META \
 		"INSERT INTO %s\n" \
 		"            (time, interval, host, plugin, plugin_instance,\n" \
-		"             type, type_instance, dsnames, dstypes, values,\n" \
-		"             database, schemaname, tablename, indexname,\n" \
-		"             metric)\n " \
+		"             type, type_instance, dsnames, dstypes, values, meta)\n" \
 		"VALUES (TIMESTAMP WITH TIME ZONE 'EPOCH' + " \
-				"%d * INTERVAL '1 SECOND',\n" \
-		"        %d, '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',\n" \
-		"        %s, %s, %s, '%s');"
+		"        %d * INTERVAL '1 SECOND',\n" \
+		"        %d, '%s', '%s', '%s', '%s', '%s',\n" \
+		"        (SELECT array_agg(trim(BOTH '\"' FROM a::TEXT))\n" \
+		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
+		"        (SELECT array_agg(trim(BOTH '\"' FROM a::TEXT))\n" \
+		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
+		"        (SELECT array_agg(a::TEXT::NUMERIC)\n" \
+		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
+		"        (SELECT hstore(coalesce(string_agg(a::TEXT, ','), ''))\n" \
+		"         FROM (SELECT hstore(ARRAY[key::TEXT, value::TEXT]) AS a\n" \
+		"               FROM json_each_text('%s'::JSON)) AS z));"
 
 #define SELECT_DAY0 "SELECT ((TIMESTAMP WITH TIME ZONE 'EPOCH' + %d * " \
 		"INTERVAL '1 SECOND') AT TIME ZONE 'UTC')::DATE;"
@@ -49,7 +66,7 @@
 		"CREATE TABLE %s (%s\n" \
 		"    CHECK (time >= '%s'::TIMESTAMP AT TIME ZONE 'UTC'\n" \
 		"       AND time < '%s'::TIMESTAMP AT TIME ZONE 'UTC')\n" \
-		") INHERITS(vl_%s);"
+		") INHERITS(value_list);"
 
 static int verbose_flag = 0;
 static int stats_flag = 0;
@@ -69,7 +86,7 @@ struct opts
 };
 
 inline int create_partition_index(PGconn *, const char *, char *);
-int create_partition_table(PGconn *, char *, const char *, time_t, char *);
+int create_partition_table(PGconn *, char *, const char *, time_t);
 inline int do_command(PGconn *, char *);
 int do_insert(PGconn *, char *);
 int load(PGconn *, json_object *);
@@ -98,7 +115,7 @@ inline int create_partition_index(PGconn *conn, const char *plugin,
 }
 
 int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
-		time_t timet, char *metric)
+		time_t timet)
 {
 	PGresult *res;
 	char sql[SQL_LEN + 1];
@@ -130,14 +147,8 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 	strcpy(day1_str,  PQgetvalue(res, 0, 0));
 	PQclear(res);
 
-	if (strcmp(plugin, "postgresql") == 0) {
-		char extra_check[64];
-		snprintf(extra_check, 63, "\n    CHECK (metric = '%s'),", metric);
-		snprintf(sql, SQL_LEN, CREATE_PARTITION_TABLE, tablename, extra_check,
-				day0_str, day1_str, plugin);
-	} else
-		snprintf(sql, SQL_LEN, CREATE_PARTITION_TABLE, tablename, "",
-				day0_str, day1_str, plugin);
+	snprintf(sql, SQL_LEN, CREATE_PARTITION_TABLE, tablename, "", day0_str,
+			day1_str);
 
 	if (do_command(conn, sql) != 0)
 		return 1;
@@ -186,7 +197,7 @@ int load(PGconn *conn, json_object *jsono)
 {
 	int i;
 
-	struct json_object *jo_t;
+	struct json_object *jo_t ;
 
 	const char *plugin = NULL;
 	const char *plugin_instance = NULL;
@@ -196,18 +207,13 @@ int load(PGconn *conn, json_object *jsono)
 	const char *dstypes = NULL;
 	const char *values = NULL;
 	const char *host = NULL;
+	const char *meta = NULL;
 	time_t timet;
 	int interval;
 	struct tm gmtm;
 
 	char sql[SQL_LEN + 1];
 	char partition_table[TABLENAME_LEN + 1];
-
-	/*
-	 * This is hard coded to 65 to match the max length (including termination)
-	 * of the type_instance value from collectd.
-	 */
-	char metric[65] = "";
 
 	jo_t = json_object_object_get(jsono, "plugin");
 	plugin = json_object_get_string(jo_t);
@@ -240,81 +246,24 @@ int load(PGconn *conn, json_object *jsono)
 	jo_t = json_object_object_get(jsono, "host");
 	host = json_object_get_string(jo_t);
 
-	if (strcmp(plugin, "postgresql") == 0) {
-		struct json_object *json_meta;
+	jo_t = json_object_object_get(jsono, "meta");
+	meta = json_object_get_string(jo_t);
 
-		const char *p;
-		const char *database = NULL;
-		char schemaname[67];
-		char tablename[67];
-		char indexname[67];
-
-		char *tmp = strstr(type_instance, "-");
-		int length = tmp - type_instance;
-
-		/*
-		 * collectd v5.0 starts putting the meta data under "meta" with the
-         * write_httpd plugin.
-		 */
-		json_meta = json_object_object_get(jsono, "meta");
-
-		jo_t = json_object_object_get(json_meta, "database");
-		database = json_object_get_string(jo_t);
-
-		jo_t = json_object_object_get(json_meta, "schema");
-		p = json_object_get_string(jo_t);
-		if (p == NULL || p[0] == '\0')
-			strncpy(schemaname, "NULL", 66);
-		else
-			snprintf(schemaname, 66, "'%s'", p);
-
-		jo_t = json_object_object_get(json_meta, "table");
-		p = json_object_get_string(jo_t);
-		if (p == NULL || p[0] == '\0')
-			strncpy(tablename, "NULL", 66);
-		else
-			snprintf(tablename, 66, "'%s'", p);
-
-		jo_t = json_object_object_get(json_meta, "index");
-		p = json_object_get_string(jo_t);
-		if (p == NULL || p[0] == '\0')
-			strncpy(indexname, "NULL", 66);
-		else
-			snprintf(indexname, 66, "'%s'", p);
-
-		strncpy(metric, type_instance, length);
-		metric[length] = '\0';
-
-		snprintf(partition_table, TABLENAME_LEN, "vl_%s_%d%02d%02d_%s", plugin,
-				gmtm.tm_year + 1900, gmtm.tm_mon + 1, gmtm.tm_mday, metric);
-		snprintf(sql, SQL_LEN, INSERT_STATEMENT_POSTGRESQL, partition_table,
-				(int) timet, interval, host, plugin, plugin_instance, type,
-				type_instance, dsnames, dstypes, values, database, schemaname,
-				tablename, indexname, metric);
-	} else {
-		snprintf(partition_table, TABLENAME_LEN, "vl_%s_%d%02d%02d", plugin,
-				gmtm.tm_year + 1900, gmtm.tm_mon + 1, gmtm.tm_mday);
+	snprintf(partition_table, TABLENAME_LEN, "vl_%s_%d%02d%02d", plugin,
+			gmtm.tm_year + 1900, gmtm.tm_mon + 1, gmtm.tm_mday);
+	if (meta == NULL)
 		snprintf(sql, SQL_LEN, INSERT_STATEMENT, partition_table, (int) timet,
 				interval, host, plugin, plugin_instance, type, type_instance,
 				dsnames, dstypes, values);
-	}
-
-	/*
-	 * It may be more efficient to append the strings manually and converts the
-	 * []'s to {}'s than to use snprintf().
-	 */
-	for (i = 203; i < strlen(sql); i++) {
-		if (sql[i] == '[')
-			sql[i] = '{';
-		else if (sql[i] == ']')
-			sql[i] = '}';
-	}
+	else
+		snprintf(sql, SQL_LEN, INSERT_STATEMENT_META, partition_table,
+				(int) timet, interval, host, plugin, plugin_instance, type,
+				type_instance, dsnames, dstypes, values, meta);
 
 	i = do_insert(conn, sql);
 	if (i != 0) {
 		/* The partition table does not exist, create it. */
-		i = create_partition_table(conn, partition_table, plugin, timet,
-				metric);
+		i = create_partition_table(conn, partition_table, plugin, timet);
 		if (i == 0) {
 			i = do_insert(conn, sql);
 			if (i != 0) {
