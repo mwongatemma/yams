@@ -27,7 +27,7 @@
 		"            (time, interval, host, plugin, plugin_instance,\n" \
 		"             type, type_instance, dsnames, dstypes, values)\n" \
 		"VALUES (TIMESTAMP WITH TIME ZONE 'EPOCH' + " \
-        "%d * INTERVAL '1 SECOND',\n" \
+		"            %d * INTERVAL '1 SECOND',\n" \
 		"        %d, '%s', '%s', '%s', '%s', '%s',\n" \
 		"        (SELECT array_agg(trim(BOTH '\"' FROM a::TEXT))\n" \
 		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
@@ -62,10 +62,15 @@
 		"INTERVAL '1 SECOND') AT TIME ZONE 'UTC')::DATE;"
 #define SELECT_DAY1 "SELECT ('%s'::DATE + INTERVAL '1 DAY')::DATE;"
 
+/*
+ * Postgres constraint_exclusion needs to be 'on' or 'partition' in order to
+ * take advantage of planner optimizations on inherited tables.
+ */
 #define CREATE_PARTITION_TABLE \
-		"CREATE TABLE %s (%s\n" \
+		"CREATE TABLE %s (\n" \
 		"    CHECK (time >= '%s'::TIMESTAMP AT TIME ZONE 'UTC'\n" \
-		"       AND time < '%s'::TIMESTAMP AT TIME ZONE 'UTC')\n" \
+		"       AND time < '%s'::TIMESTAMP AT TIME ZONE 'UTC'),\n" \
+		"    CHECK (plugin = '%s')\n" \
 		") INHERITS(value_list);"
 
 static int verbose_flag = 0;
@@ -86,7 +91,8 @@ struct opts
 };
 
 inline int create_partition_index(PGconn *, const char *, char *);
-int create_partition_table(PGconn *, char *, const char *, time_t);
+int create_partition_table(PGconn *, char *, const char *, const char *,
+		time_t);
 inline int do_command(PGconn *, char *);
 int do_insert(PGconn *, char *);
 int load(PGconn *, json_object *);
@@ -100,22 +106,56 @@ inline int create_partition_index(PGconn *conn, const char *plugin,
 {
 	char sql[SQL_LEN + 1];
 
-	if (strcmp(plugin, "cpu") == 0)
+	if (strcmp(plugin, "cpu") == 0) {
 		snprintf(sql, SQL_LEN,
 				"CREATE INDEX ON %s (time, host, type_instance, " \
 				"plugin_instance);", tablename);
-	else if (strcmp(plugin, "memory") == 0 || strcmp(plugin, "vmem") == 0)
-		snprintf(sql, SQL_LEN, "CREATE INDEX ON %s (time, host);", tablename);
-	else
-		snprintf(sql, SQL_LEN, "CREATE INDEX ON %s (time, host);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
+	} else if (strcmp(plugin, "postgresql") == 0) {
+		snprintf(sql, SQL_LEN,
+				"CREATE INDEX ON %s (time, host);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
 
-	if (do_command(conn, sql) != 0)
-		return 1;
+		snprintf(sql, SQL_LEN,
+				"CREATE INDEX ON %s ((meta->'database')) " \
+				"WHERE ((meta -> 'database') IS NOT NULL);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
+
+		snprintf(sql, SQL_LEN,
+				"CREATE INDEX ON %s ((meta->'schema')) " \
+				"WHERE ((meta -> 'schema') IS NOT NULL);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
+
+		snprintf(sql, SQL_LEN,
+				"CREATE INDEX ON %s ((meta->'table')) " \
+				"WHERE ((meta -> 'table') IS NOT NULL);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
+
+		snprintf(sql, SQL_LEN,
+				"CREATE INDEX ON %s ((meta->'index')) " \
+				"WHERE ((meta -> 'index') IS NOT NULL);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
+	} else if (strcmp(plugin, "memory") == 0 || strcmp(plugin, "vmem") == 0) {
+		snprintf(sql, SQL_LEN, "CREATE INDEX ON %s (time, host);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
+	} else {
+		snprintf(sql, SQL_LEN, "CREATE INDEX ON %s (time, host);", tablename);
+		if (do_command(conn, sql) != 0)
+			return 1;
+	}
+
 	return 0;
 }
 
 int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
-		time_t timet)
+		const char *type, time_t timet)
 {
 	PGresult *res;
 	char sql[SQL_LEN + 1];
@@ -147,11 +187,19 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 	strcpy(day1_str,  PQgetvalue(res, 0, 0));
 	PQclear(res);
 
-	snprintf(sql, SQL_LEN, CREATE_PARTITION_TABLE, tablename, "", day0_str,
-			day1_str);
+	snprintf(sql, SQL_LEN, CREATE_PARTITION_TABLE, tablename, day0_str,
+			day1_str, plugin);
 
 	if (do_command(conn, sql) != 0)
 		return 1;
+
+	/* Addition CHECK constraints for constraint_exclusion by plugin. */
+	if (strcmp(plugin, "postgresql") == 0) {
+		snprintf(sql, SQL_LEN, "ALTER TABLE %s ADD CHECK (type = '%s');",
+				tablename, type);
+		if (do_command(conn, sql) != 0)
+			return 1;
+	}
 
 	create_partition_index(conn, plugin, tablename);
 
@@ -249,8 +297,14 @@ int load(PGconn *conn, json_object *jsono)
 	jo_t = json_object_object_get(jsono, "meta");
 	meta = json_object_get_string(jo_t);
 
-	snprintf(partition_table, TABLENAME_LEN, "vl_%s_%d%02d%02d", plugin,
-			gmtm.tm_year + 1900, gmtm.tm_mon + 1, gmtm.tm_mday);
+	if (strcmp(plugin, "postgresql") == 0)
+		/* Partition postgresql plugin data further by type. */
+		snprintf(partition_table, TABLENAME_LEN, "vl_%s_%d%02d%02d_%s", plugin,
+				gmtm.tm_year + 1900, gmtm.tm_mon + 1, gmtm.tm_mday, type);
+	else
+		snprintf(partition_table, TABLENAME_LEN, "vl_%s_%d%02d%02d", plugin,
+				gmtm.tm_year + 1900, gmtm.tm_mon + 1, gmtm.tm_mday);
+
 	if (meta == NULL)
 		snprintf(sql, SQL_LEN, INSERT_STATEMENT, partition_table, (int) timet,
 				interval, host, plugin, plugin_instance, type, type_instance,
@@ -263,7 +317,7 @@ int load(PGconn *conn, json_object *jsono)
 	i = do_insert(conn, sql);
 	if (i != 0) {
 		/* The partition table does not exist, create it. */
-		i = create_partition_table(conn, partition_table, plugin, timet);
+		i = create_partition_table(conn, partition_table, plugin, type, timet);
 		if (i == 0) {
 			i = do_insert(conn, sql);
 			if (i != 0) {
