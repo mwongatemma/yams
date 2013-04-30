@@ -1,0 +1,17 @@
+# Python byte compiled files
+*.pyc
+
+# Pyramid egg files
+yams-wui/yams_wui.egg-info
+
+# vim swap files
+*.sw?
+
+# Latex output
+doc/yams-user-guide.pdf
+doc/yams-user-guide.log
+doc/yams-user-guide.aux
+
+# Compile ETL binaries
+etl/yams-etl
+etl/yams-etl-fcgi
