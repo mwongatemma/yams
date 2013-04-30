@@ -1,0 +1,10 @@
+# pg_stat_database
+database_stats numbackends:COUNTER:0:u, xact_rollback:COUNTER:0:u, xact_commit:COUNTER:0:u, blks_read:COUNTER:0:u, blks_hit:COUNTER:0:u, tup_returned:COUNTER:0:u, tup_fetched:COUNTER:0:u, tup_inserted:COUNTER:0:u, tup_updated:COUNTER:0:u, tup_deleted:COUNTER:0:u
+
+# pg_stat_all_tables and pg_statio_all_tables combined
+table_stats seq_scan:COUNTER:0:U seq_tup_read:COUNTER:0:U, idx_scan:COUNTER:0:U, idx_tup_fetch:COUNTER:0:U, n_tup_ins:COUNTER:0:U, n_tup_upd:COUNTER:0:U, n_tup_del:COUNTER:0:U, n_tup_hot_upd:COUNTER:0:U, n_live_tup:COUNTER:0:U, n_dead_tup:COUNTER:0:U, heap_blks_read:COUNTER:0:U, heap_blks_hit:COUNTER:0:U, idx_blks_read:COUNTER:0:U, idx_blks_hit:COUNTER:0:U, toast_blks_read:COUNTER:0:U, toast_blks_hit:COUNTER:0:U, tidx_blks_read:COUNTER:0:U, tidx_blks_hit:COUNTER:0:U
+
+# pg_stat_all_indexes and pg_statio_all_indexes combined
+index_stats idx_scan:COUNTER:0:U idx_tup_read:COUNTER:0:U idx_tup_fetch:COUNTER:0:U idx_blks_read:COUNTER:0:U idx_blks_hit:COUNTER:0:U
+
+table_size total_relation_size:GAUGE:0:U, table_size:GAUGE:0:U, indexes_size:GAUGE:0:U

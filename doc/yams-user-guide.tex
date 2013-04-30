@@ -46,22 +46,17 @@ This section describes the software required by \textbf{YAMS}.
         various platforms:
         \url{http://wiki.postgresql.org/wiki/Detailed_installation_guides}} It
         is recommended that this system is a dedicated resource for the data
-        warehouse.  \textbf{YAMS} was proofed against version 9.0 of PostgreSQL
-        but there is no reason to not use an older version at the time of this
-        writing.  This guide leaves it up to the user to determine whether to
-        install PostgreSQL from pre-built packages or from source code.
-  \item The \textbf{YAMS} ETL consists of two components.  There is a RESTful
-        Web service and an ETL process in the \textbf{YAMS} \texttt{etl/}
-        directory.  The Web service is built with
-        lighttpd\footnote{\url{http://www.lighttpd.net}} supported by
-        Redis\footnote{\url{http://redis.io/}}.  A custom C
-        FastCGI\footnote{\url{http://www.fastcgi.com/}} program processes the
-        incoming HTTP POST data and pushes the data to Redis.  Another program
-        pops the data from Redis, transforms and loads the data in the data
-        warehouse.  The ETL process is a C program that pops data out of Redis,
-        processes it and loads the resulting data in to the data warehouse.
-        There is currently no official release of \textbf{YAMS}.  The source
-        code is available at \url{http://github.com/myemma/yams} via
+        warehouse.  \textbf{YAMS} was proofed against PostgreSQL 9.2.
+  \item The \textbf{YAMS} ETL consists of three components.  There is a RESTful
+        Web service, an ETL process in the \textbf{YAMS} \texttt{etl/}
+        directory, and Redis.  The Web service is built as a FastCGI C program.
+        The custom C FastCGI\footnote{\url{http://www.fastcgi.com/}} program
+        processes the incoming HTTP POST data and pushes the data to Redis.
+        Another program pops the data from Redis, transforms and loads the data
+        in the data warehouse.  The ETL process is a C program that pops data
+        out of Redis, processes it and loads the resulting data in to the data
+        warehouse.  There is currently no official release of \textbf{YAMS}.
+        The source code is available at \url{http://github.com/myemma/yams} via
         \texttt{git} or downloading a snapshot of the source.  It is
         recommended to install the \textbf{YAMS} ETL on a dedicated system.
         lighttpd and needs to installed the ETL system.  Redis is recommended
@@ -69,10 +64,8 @@ This section describes the software required by \textbf{YAMS}.
   \item \textbf{collectd}\footnote{\url{http://www.collectd.org/}} is a system
         statistics collection daemon used on the systems under monitor.  At the
         time of this writing \textbf{YAMS} requires the use of a forked
-        version\footnote{Two sets of changes have been submitted back to the
+        version\footnote{A set of changes has been submitted back to the
         \textbf{collectd} community:
-        \url{http://mailman.verplant.org/pipermail/collectd/2011-January/004339.html}
-        and
         \url{http://mailman.verplant.org/pipermail/collectd/2011-January/004342.html}}
         of \textbf{collectd} 4.10.2 that is available via git or by downloading
         a snapshot of the source at
@@ -131,14 +124,46 @@ socket.
 
 \subsection{ETL}
 
+The ETL has been tried with both lighttpd and nginx.  Lately nginx seems to be
+more stable than running the ETL FastCGI app under lighttpd.
+
+\subsubsection{Setting up nginx}
+
+Familiarity with setting up nginx and FastCGI will help in this section.
+
+The three environment variables REDIS\_SERVER, REDIS\_PORT, and REDIS\_KEY can
+be set in the shell to customize the Redis connection.  If not specified the
+default values will be set to what is shown in the example.
+
+The FastCGI process needs to be started outside of nginx.  One way is to use
+spawn-fcgi:
+\lstset{language=sh}
+\begin{lstlisting}
+spawn-fcgi -p 9000 -n /usr/local/bin/yams-etl-fcgi
+\end{lstlisting}
+
+The portion of the nginx configuration to point to the FastCGI process is as
+follows:
+\lstset{language=clean}
+\begin{lstlisting}
+        location /yams/ {
+            root   html;
+            include        fastcgi_params;
+            fastcgi_pass   127.0.0.1:9000;
+        }
+\end{lstlisting}
+
+\subsubsection{Setting up lighttpd}
+
 Familiarity with setting up lighttpd and FastCGI will help in this section.
-This example points out specific configuration parameters for \textbf{YAMS}.
-Specifically the HTTP port to listen to, how to activate the FastCGI module,
-and how to route all requests to the C FastCGI service.  The three environment
-variables REDIS\_SERVER, REDIS\_PORT, and REDIS\_KEY can be set to specific
-Redis connection parameters.  If not specified the default values will be set
-to what is shown in the example.  The \textit{bin-path} parameters needs to be
-set to where the \textit{yams-etl-fcgi} program is installed.
+This example only points out specific configuration parameters for
+\textbf{YAMS}.  Specifically the HTTP port to listen to, how to activate the
+FastCGI module, and how to route all requests to the C FastCGI service.  The
+three environment variables REDIS\_SERVER, REDIS\_PORT, and REDIS\_KEY can be
+set to specific Redis connection parameters.  If not specified the default
+values will be set to what is shown in the example.  The \textit{bin-path}
+parameters needs to be set to where the \textit{yams-etl-fcgi} program is
+installed.
 
 \lstset{language=clean}
 \begin{lstlisting}
@@ -199,43 +224,26 @@ LoadPlugin postgresql
 \end{lstlisting}
 
 With the modifications to the \textbf{collectd} \textit{postgresql} plugin we
-can do slightly more meaningful queries.  Specifically it is now possible to
-query the database, schema name, table name, and index name as part of the
+can do slightly more meaningful queries.  More specifically it is now possible
+to query the database, schema name, table name, and index name as part of the
 query as meta data to the statistics retrieved.  For example the database
 statistics can be collected for all databases in a PostgreSQL instance with a
 single query using the following configuration:
 \lstset{language=xml}
 \begin{lstlisting}
+TypesDB "/opt/collectd/etc/types.db.postgresql"
+
 <Plugin postgresql>
     <Query stat_database>
-        Statement "SELECT datname, numbackends,
-       xact_commit, xact_rollback,
-       blks_read, blks_hit
+        Statement "
+SELECT datname, numbackends, xact_rollback, xact_commit, blks_read, blks_hit
 FROM pg_stat_database;"
 
         <Result>
-            Type gauge
-            InstancePrefix "numbackends"
+            Type database_stats
+            InstancePrefix "database_stats"
             InstancesFrom "datname"
-            ValuesFrom "numbackends"
-        </Result>
-        <Result>
-            Type counter
-            InstancePrefix "xact_rollback"
-            InstancesFrom "datname"
-            ValuesFrom "xact_rollback"
-        </Result>
-        <Result>
-            Type counter
-            InstancePrefix "xact_commit"
-            InstancesFrom "datname"
-            ValuesFrom "xact_commit"
-        </Result>
-        <Result>
-            Type counter
-            InstancePrefix "blks_read"
-            InstancesFrom "datname"
-            ValuesFrom "blks_read"
+            ValuesFrom "numbackends" "xact_rollback" "xact_commit" "blks_read" "blks_hit"
         </Result>
     </Query>
 
@@ -246,6 +254,12 @@ FROM pg_stat_database;"
         DatabasenameColumn 0
     </Database>
 </Plugin>
+\end{lstlisting}
+
+A custom types.db file is needed to describe the data further.
+\lstset{language=clean}
+\begin{lstlisting}
+database_stats numbackends:COUNTER:0:u, xact_rollback:COUNTER:0:u, xact_commit:COUNTER:0:u, blks_read:COUNTER:0:u, blks_hit:COUNTER:0:u,
 \end{lstlisting}
 
 Examples will be included in the source code distribution's \texttt{contrib/}
