@@ -26,12 +26,19 @@ def my_data(request):
     # The data source name and type should be the consistent within a plugin.
     # Grab the first one to get the details.
     result = session.execute(
-            """SELECT dsnames, dstypes
+            """SELECT dsnames, dstypes,
+                   plugin ||
+                   CASE WHEN plugin_instance <> ''
+                        THEN '.' || plugin_instance ELSE '' END ||
+                   '.' || type ||
+                   CASE WHEN type_instance <> ''
+                        THEN '.' || type_instance ELSE '' END AS prefix
             FROM value_list
             WHERE plugin = :plugin
             LIMIT 1;""", {'plugin': plugin}).first()
     dsnames = result[0]
     dstypes = result[1]
+    prefix = result[2]
     length = len(dsnames)
 
     # Cast the timestamp with time zone to without time zone, which should
@@ -44,7 +51,9 @@ def my_data(request):
               AND host = :host
             ORDER BY time;""", {'plugin': plugin, 'host': host})
 
-    csv = 'timestamp,%s\n' % ','.join(dsnames)
+    csv = 'timestamp,%s\n' % \
+            ','.join(['%s.%s.%s' % \
+                    (host, prefix, dsname) for dsname in dsnames])
 
     lastrow = data.fetchone()
     for row in data:
