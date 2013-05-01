@@ -1,0 +1,4 @@
+Plugins:
+<ul tal:repeat="plugin plugins">
+  <li>${plugin[0]}</li>
+</ul>

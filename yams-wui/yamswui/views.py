@@ -8,13 +8,18 @@ from .models import (
     )
 
 
-@view_config(route_name='home', renderer='templates/mytemplate.pt')
-def my_view(request):
+@view_config(route_name='chart', renderer='templates/chart.pt')
+def chart(request):
     return {'ylabel': ''}
+
+@view_config(route_name='home', renderer='templates/home.pt')
+def home(request):
+    return {}
 
 @view_config(route_name='data')
 def my_data(request):
     plugin = request.matchdict['plugin']
+    host = request.matchdict['host']
 
     session = DBSession()
 
@@ -36,7 +41,8 @@ def my_data(request):
             """SELECT time::TIMESTAMP, values
             FROM value_list
             WHERE plugin = :plugin
-            ORDER BY time;""", {'plugin': plugin})
+              AND host = :host
+            ORDER BY time;""", {'plugin': plugin, 'host': host})
 
     csv = 'timestamp,%s\n' % ','.join(dsnames)
 
@@ -54,3 +60,16 @@ def my_data(request):
         lastrow = row
 
     return Response(csv)
+
+@view_config(route_name='plugin', renderer='templates/plugin.pt')
+def plugin(request):
+    session = DBSession()
+    # Cheat on getting the list of plugins that data exists for by taking
+    # advantage of the table partitioning naming schema.
+    plugins = session.execute(
+            """SELECT DISTINCT substring(tablename, 'vl_(.*?)_') AS plugin
+            FROM pg_tables
+            WHERE schemaname = 'collectd'
+              AND tablename LIKE 'vl\_%'
+            ORDER BY plugin;""")
+    return {'plugins': plugins}

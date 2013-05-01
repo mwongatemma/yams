@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Yet Another Monitoring System</title>
+    <link rel="stylesheet" type="text/css" href="static/yams.css">
+    <script src="static/jquery-2.0.0.min.js"></script>
+    <script src="static/d3.v3.min.js"></script>
+  </head>
+  <body>
+    <div id="plugins" style="float: left; height: 100%; width: 100px">...</div>
+    <script type="text/javascript">
+      $( document ).ready( function() {
+        function show_plugins( content ) {
+          $( '#plugins' ).html( content );
+        }
+        $.get( "plugin", show_plugins );
+      });
+    </script>
+
+    <div id="chart_area">...</div>
+    <script type="text/javascript">
+      $( document ).ready( function() {
+        function show_chart( content ) {
+          $( '#chart_area' ).html( content );
+        }
+        $.get( "chart", show_chart );
+      });
+    </script>
+  </body>
+</html>
