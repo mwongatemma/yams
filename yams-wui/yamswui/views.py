@@ -102,22 +102,24 @@ def my_data(request):
                      (host.replace('.', '_'), prefix, dsname) \
                       for dsname in plot_dsnames])
 
-    lastrow = data.fetchone()
-    for row in data:
+    # TODO: With thousands of data points, this loop seems to be unacceptably
+    # slow.  Is there a faster way?  Database stored procedure?
+    oldrow = data.fetchone()
+    for newrow in data:
         datum = []
         for i in range(length):
             if dsnames[i] in plot_dsnames:
                 # TODO: Handle absolute types.
                 if dstypes[i] == 'counter':
                     # FIXME: Handle wrap around.
-                    datum.append(str(lastrow[1][i] - row[1][i]))
+                    datum.append(str(newrow[1][i] - oldrow[1][i]))
                 elif dstypes[i] == 'derive':
-                    datum.append(str(lastrow[1][i] - row[1][i]))
+                    datum.append(str(newrow[1][i] - oldrow[1][i]))
                 elif dstypes[i] == 'gauge':
-                    datum.append(str(lastrow[1][i]))
+                    datum.append(str(oldrow[1][i]))
 
-        csv += '%s,%s\n' % (lastrow[0], ','.join(datum))
-        lastrow = row
+        csv += '%s,%s\n' % (oldrow[0], ','.join(datum))
+        oldrow = newrow
 
     return Response(csv)
 
