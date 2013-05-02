@@ -21,6 +21,13 @@ def my_data(request):
     plugin = request.matchdict['plugin']
     host = request.matchdict['host']
 
+    # Not sure if there is a faster way, but always get the entire dataset from
+    # the database, and filter out the values we don't want specified by the
+    # query string.
+    wanted_dsnames = None
+    if 'dsnames' in request.params:
+        wanted_dsnames = request.params.getall('dsnames')
+
     session = DBSession()
 
     # The data source name and type should be the consistent within a plugin.
@@ -41,6 +48,18 @@ def my_data(request):
     prefix = result[2]
     length = len(dsnames)
 
+    if wanted_dsnames:
+        plot_dsnames = []
+        for dsname in dsnames:
+            if dsname in wanted_dsnames:
+                plot_dsnames.append(dsname)
+    else:
+        plot_dsnames = dsnames
+
+    if len(plot_dsnames) == 0:
+        # No need to continue if ther eis nothing to plot.
+        return Response('')
+
     # Cast the timestamp with time zone to without time zone, which should
     # result in the system timezone because I can't figure out the format to
     # make d3 read the time zone correctly.
@@ -49,21 +68,23 @@ def my_data(request):
             FROM value_list
             WHERE plugin = :plugin
               AND host = :host
+              AND time > CURRENT_TIMESTAMP - INTERVAL '1 HOUR'
             ORDER BY time;""", {'plugin': plugin, 'host': host})
 
     csv = 'timestamp,%s\n' % \
             ','.join(['%s.%s.%s' % \
-                    (host, prefix, dsname) for dsname in dsnames])
+                    (host, prefix, dsname) for dsname in plot_dsnames])
 
     lastrow = data.fetchone()
     for row in data:
         datum = []
         for i in range(length):
-            # TODO: Handle counter and absolute types.
-            if dstypes[i] == 'gauge':
-                datum.append(str(lastrow[1][i]))
-            elif dstypes[i] == 'derive':
-                datum.append(str(lastrow[1][i] - row[1][i]))
+            if dsnames[i] in plot_dsnames:
+                # TODO: Handle counter and absolute types.
+                if dstypes[i] == 'gauge':
+                    datum.append(str(lastrow[1][i]))
+                elif dstypes[i] == 'derive':
+                    datum.append(str(lastrow[1][i] - row[1][i]))
 
         csv += '%s,%s\n' % (lastrow[0], ','.join(datum))
         lastrow = row
