@@ -1,8 +1,70 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>Yet Another Monitoring System</title>
-</head>
-<body>
-</body>
+  <head>
+    <title>Yet Another Monitoring System</title>
+    <script src="/static/jquery-2.0.0.min.js"></script>
+    <script src="/static/flotr2.min.js"></script>
+    <style type="text/css">
+      body {
+        margin: 0px;
+        padding: 0px;
+      }
+      #container {
+        width : 600px;
+        height: 384px;
+        margin: 8px auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container"></div>
+    <script type="text/javascript">
+      (function () {
+         function myDateFormatter(ctime) {
+           myDate = new Date();
+           myDate.setTime(ctime);
+           return myDate.toLocaleString();
+         }
+
+        // Contruct the data array from a csv data source.
+        $.get("data.csv/load/tweety", function(csv) {
+          var
+            container = document.getElementById('container'),
+            graph,
+            data = [],
+            lines = csv.split("\n"),
+            headers = lines[0].split(","),
+            rows = lines.length - 1, // Don't count the header.
+            cols = headers.length,
+            col, row;
+
+          // Break down the header to set labels for the legend.
+          for (col = 1; col < cols; col++) {
+			data.push({'data': [], 'label': headers[col]});
+          }
+
+          // Transform the data to plot.
+          for (row = 1; row < rows; row++) {
+            line = lines[row].split(",");
+            for (col = 1; col < cols; col++) {
+              data[col - 1]['data'].push([line[0], line[col]]);
+            }
+          }
+
+          // Draw Graph
+          graph = Flotr.draw(container, data, {
+            legend: {
+              position: 'nw',
+            },
+            xaxis : {
+              tickFormatter: myDateFormatter
+            },
+            yaxis : {
+              min: 0
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
 </html>
