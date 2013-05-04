@@ -10,7 +10,9 @@ from .models import (
 
 @view_config(route_name='home', renderer='templates/mytemplate.pt')
 def my_view(request):
-    return {}
+    url_list = ['data.csv/load/tweety?dsnames=shortterm',
+                'data.csv/load/tweety?dsnames=longterm']
+    return {'url_list': url_list}
 
 
 @view_config(route_name='data_csv')

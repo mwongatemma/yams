@@ -19,40 +19,55 @@
   <body>
     <div id="container"></div>
     <script type="text/javascript">
-      (function () {
-         function myDateFormatter(ctime) {
-           myDate = new Date();
-           myDate.setTime(ctime);
-           return myDate.toLocaleString();
-         }
+      ( function () {
+        var ajax_calls = [],
+            data = [];
 
-        // Contruct the data array from a csv data source.
-        $.get("data.csv/load/tweety", function(csv) {
+        function myDateFormatter( ctime ) {
+          myDate = new Date();
+          myDate.setTime( ctime );
+          return myDate.toLocaleString();
+        }
+
+        function process_csv(csv) {
           var
-            container = document.getElementById('container'),
-            graph,
-            data = [],
-            lines = csv.split("\n"),
-            headers = lines[0].split(","),
-            rows = lines.length - 1, // Don't count the header.
-            cols = headers.length,
-            col, row;
+              tmp_data = [],
+              lines = csv.split( "\n" ),
+              headers = lines[ 0 ].split( "," ),
+              rows = lines.length - 1, // Don't count the line with the header.
+              cols = headers.length,
+              col, row;
 
           // Break down the header to set labels for the legend.
-          for (col = 1; col < cols; col++) {
-			data.push({'data': [], 'label': headers[col]});
+          for ( col = 1; col < cols; col++ ) {
+			tmp_data.push( {'data': [], 'label': headers[ col ]} );
           }
 
           // Transform the data to plot.
-          for (row = 1; row < rows; row++) {
-            line = lines[row].split(",");
-            for (col = 1; col < cols; col++) {
-              data[col - 1]['data'].push([line[0], line[col]]);
+          for ( row = 1; row < rows; row++ ) {
+            line = lines[ row ].split(",");
+            for ( col = 1; col < cols; col++ ) {
+              tmp_data[ col - 1 ][ 'data' ].push( [ line[ 0 ], line[ col ] ] );
             }
           }
 
+          for ( col = 0; col < cols - 1; col++ ) {
+            data.push( tmp_data[ col ] );
+          }
+        }
+
+        <?python
+          jscode = ' '.join('ajax_calls.push( $.get( "%s", process_csv ) );' % url for url in url_list)
+        ?>
+        ${jscode}
+
+        $.when.apply( this, ajax_calls ).done( function() {
+          var
+              container = document.getElementById( 'container' ),
+              graph;
+
           // Draw Graph
-          graph = Flotr.draw(container, data, {
+          graph = Flotr.draw( container, data, {
             legend: {
               position: 'nw',
             },
@@ -62,9 +77,9 @@
             yaxis : {
               min: 0
             }
-          });
-        });
-      })();
+          } );
+        } );
+      } )();
     </script>
   </body>
 </html>
