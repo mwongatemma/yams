@@ -17,7 +17,19 @@
     </style>
   </head>
   <body>
+    <div id="plugins" style="float: left; height: 100%; width: 100px">...</div>
+
+    <script type="text/javascript">
+      $( document ).ready( function() {
+        function list_plugins( content ) {
+          $( '#plugins' ).html( content );
+        }
+        $.get( "plugins", list_plugins );
+      });
+    </script>
+
     <div id="container"></div>
+
     <script type="text/javascript">
       ( function () {
         var ajax_calls = [],
@@ -30,8 +42,7 @@
         }
 
         function process_csv(csv) {
-          var
-              tmp_data = [],
+          var tmp_data = [],
               lines = csv.split( "\n" ),
               headers = lines[ 0 ].split( "," ),
               rows = lines.length - 1, // Don't count the line with the header.
@@ -40,12 +51,12 @@
 
           // Break down the header to set labels for the legend.
           for ( col = 1; col < cols; col++ ) {
-			tmp_data.push( {'data': [], 'label': headers[ col ]} );
+			tmp_data.push( { 'data': [], 'label': headers[ col ] } );
           }
 
           // Transform the data to plot.
           for ( row = 1; row < rows; row++ ) {
-            line = lines[ row ].split(",");
+            line = lines[ row ].split( "," );
             for ( col = 1; col < cols; col++ ) {
               tmp_data[ col - 1 ][ 'data' ].push( [ line[ 0 ], line[ col ] ] );
             }
@@ -62,8 +73,7 @@
         ${jscode}
 
         $.when.apply( this, ajax_calls ).done( function() {
-          var
-              container = document.getElementById( 'container' ),
+          var container = document.getElementById( 'container' ),
               graph;
 
           // Draw Graph

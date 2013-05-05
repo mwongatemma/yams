@@ -1,0 +1,4 @@
+${type} Data Sources:
+<ul tal:repeat="dsname dsnames">
+  <li><span class="clicked_dsname">${dsname}</span></li>
+</ul>

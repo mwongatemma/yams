@@ -56,20 +56,21 @@ def data_csv(request):
     # The data source name and type should be the consistent within a plugin.
     # Grab the first one to get the details.
     result = session.execute(
-            """SELECT dsnames, dstypes,
-plugin ||
-CASE WHEN plugin_instance <> ''
-THEN '.' || plugin_instance ELSE '' END ||
-'.' || type ||
-CASE WHEN type_instance <> ''
-THEN '.' || type_instance ELSE '' END AS prefix
-FROM value_list
-WHERE plugin = :plugin
-%s
-LIMIT 1;""" % where_condition, sql_params).first()
-    dsnames = result[0]
-    dstypes = result[1]
-    prefix = result[2]
+            "SELECT dsnames, dstypes, " \
+            "       plugin || " \
+            "           CASE WHEN plugin_instance <> '' " \
+            "                THEN '.' || plugin_instance ELSE '' END || " \
+            "           '.' || type || " \
+            "           CASE WHEN type_instance <> '' " \
+            "                THEN '.' || type_instance ELSE '' END " \
+            "           AS prefix " \
+            "FROM value_list " \
+            "WHERE plugin = :plugin " \
+            "%s " \
+            "LIMIT 1;""" % where_condition, sql_params).first()
+    dsnames = result['dsnames']
+    dstypes = result['dstypes']
+    prefix = result['prefix']
     length = len(dsnames)
 
     if wanted_dsnames:
@@ -88,14 +89,14 @@ LIMIT 1;""" % where_condition, sql_params).first()
     # result in the system timezone because I can't figure out the format to
     # make d3 read the time zone correctly.
     data = session.execute(
-            """SELECT extract(EPOCH FROM time)::BIGINT * 1000 AS ctime_ms,
-        values
-FROM value_list
-WHERE plugin = :plugin
-AND host = :host
-AND time > CURRENT_TIMESTAMP - INTERVAL '1 HOUR'
-%s
-ORDER BY time;""" % where_condition, sql_params)
+            "SELECT extract(EPOCH FROM time)::BIGINT * 1000 AS ctime_ms, " \
+            "       values " \
+            "FROM value_list " \
+            "WHERE plugin = :plugin " \
+            "AND host = :host " \
+            "AND time > CURRENT_TIMESTAMP - INTERVAL '1 HOUR' " \
+            "%s " \
+            "ORDER BY time;" % where_condition, sql_params)
 
     csv = 'timestamp,%s\n' % \
             ','.join(['%s.%s.%s' % \
@@ -112,13 +113,145 @@ ORDER BY time;""" % where_condition, sql_params)
                 # TODO: Handle absolute types.
                 if dstypes[i] == 'counter':
                     # FIXME: Handle wrap around.
-                    datum.append(str(newrow[1][i] - oldrow[1][i]))
+                    datum.append(str(
+                            newrow['values'][i] - oldrow['values'][i]))
                 elif dstypes[i] == 'derive':
-                    datum.append(str(newrow[1][i] - oldrow[1][i]))
+                    datum.append(str(
+                            newrow['values'][i] - oldrow['values'][i]))
                 elif dstypes[i] == 'gauge':
-                    datum.append(str(oldrow[1][i]))
+                    datum.append(str(oldrow['values'][i]))
 
-        csv += '%s,%s\n' % (oldrow[0], ','.join(datum))
+        csv += '%s,%s\n' % (oldrow['ctime_ms'], ','.join(datum))
         oldrow = newrow
 
     return Response(body=csv, content_type='text/csv')
+
+
+@view_config(route_name='dsnames', renderer='templates/dsnames.pt')
+def dsnames(request):
+    plugin = request.matchdict['plugin']
+    type = request.matchdict['type']
+
+    session = DBSession()
+    dsnames = session.execute(
+            "SELECT dsnames " \
+            "FROM value_list " \
+            "WHERE plugin = :plugin " \
+            "  AND type = :type " \
+            "LIMIT 1;", {'plugin': plugin, 'type': type}).fetchone()['dsnames']
+
+    return {'plugin': plugin, 'type': type, 'dsnames': dsnames}
+
+
+@view_config(route_name='plugins', renderer='templates/plugins.pt')
+def plugins(request):
+    session = DBSession()
+    # Cheat on getting the list of plugins that data exists for by taking
+    # advantage of the table partitioning naming schema.
+    plugins = session.execute(
+            "SELECT DISTINCT substring(tablename, 'vl_(.*?)_') AS plugin " \
+            "FROM pg_tables " \
+            "WHERE schemaname = 'collectd' " \
+            "  AND tablename LIKE 'vl\\_%' " \
+            "ORDER BY plugin;")
+    return {'plugins': plugins}
+
+
+@view_config(route_name='plugin_instances',
+        renderer='templates/plugin_instances.pt')
+def plugin_instancess(request):
+    plugin = request.matchdict['plugin']
+
+    if plugin == 'postgresql':
+        return Response()
+
+    session = DBSession()
+
+    # For performance reasons, find the most recent table partition for the
+    # plugin and get the plugin_instances from that.
+    table = session.execute(
+            "SELECT tablename " \
+            "FROM pg_tables " \
+            "WHERE tablename LIKE 'vl\\_%s\\_%%' " \
+            "ORDER BY tablename DESC " \
+            "LIMIT 1;" % plugin).fetchone()['tablename']
+
+    plugin_instances = session.execute(
+            "SELECT DISTINCT plugin_instance " \
+            "FROM %s " \
+            "WHERE plugin_instance <> '' " \
+            "ORDER BY plugin_instance;" % table)
+
+    if plugin_instances.rowcount == 0:
+        return Response()
+
+    return {'plugin': plugin, 'plugin_instances': plugin_instances}
+
+
+@view_config(route_name='types', renderer='templates/types.pt')
+def types(request):
+    plugin = request.matchdict['plugin']
+
+    session = DBSession()
+
+    if plugin == 'postgresql':
+        # Because of potentially high volumes of postgres metrics, take
+        # advantage of the special partitioning schema used for the postgresql
+        # plugin.
+        types = session.execute(
+                "SELECT DISTINCT substring(tablename, " \
+                "       'vl_postgresql_\d\d\d\d\d\d\d\d_(.*)') AS type " \
+                "FROM pg_tables " \
+                "WHERE schemaname = 'collectd' " \
+                "  AND tablename LIKE 'vl\\_%' " \
+                "  AND substring(tablename, " \
+                "      'vl_postgresql_\d\d\d\d\d\d\d\d_(.*)') IS NOT NULL " \
+                "ORDER BY type;")
+    else:
+        # For performance reasons, find the most recent table partition for the
+        # plugin and get the types from that.
+        table = session.execute(
+                "SELECT tablename " \
+                "FROM pg_tables " \
+                "WHERE tablename LIKE 'vl\\_%s\\_%%' " \
+                "ORDER BY tablename DESC " \
+                "LIMIT 1;" % plugin).fetchone()['tablename']
+
+        types = session.execute(
+                "SELECT DISTINCT type " \
+                "FROM %s " \
+                "ORDER BY type;" % table)
+
+    return {'plugin': plugin, 'types': types}
+
+
+@view_config(route_name='type_instances',
+        renderer='templates/type_instances.pt')
+def type_instances(request):
+    plugin = request.matchdict['plugin']
+    type = request.matchdict['type']
+
+    if plugin == 'postgresql':
+        return Response()
+
+    session = DBSession()
+
+    # For performance reasons, find the most recent table partition for the
+    # plugin and get the plugin_instances from that.
+    table = session.execute(
+            "SELECT tablename " \
+            "FROM pg_tables " \
+            "WHERE tablename LIKE 'vl\\_%s\\_%%' " \
+            "ORDER BY tablename DESC " \
+            "LIMIT 1;" % plugin).fetchone()['tablename']
+
+    type_instances = session.execute(
+            "SELECT DISTINCT type_instance " \
+            "FROM %s " \
+            "WHERE type_instance <> '' " \
+            "ORDER BY type_instance;" % table)
+
+    if type_instances.rowcount == 0:
+        return Response()
+
+    return {'plugin': plugin, 'type': type, 'type_instances': type_instances}
