@@ -1,0 +1,50 @@
+Selected values:
+<ul>
+  <li>Plugin (req): ${plugin}</li>
+  <li>Type (req): ${type}</li>
+  <li>Host (req): ${hosts}</li>
+  <li>Data Sets: ${dsnames}</li>
+</ul>
+
+<p>
+  <span class="clicked_add_source" tal:condition="add_source == True">
+    Add Source
+  </span>
+</p>
+
+<script type="text/javascript" tal:condition="add_source == True">
+  $( '.clicked_add_source' ).click(function() {
+    $.get( "add_source", function() {
+      $.get( "chart", function( chart ) {
+        $( '#container' ).html( chart );
+        $.get( "session", function( session ) {
+          $( '#session' ).html( session );
+        } );
+      } );
+    } );
+  } );
+</script>
+
+Currently Plotted Data Sources:
+<ul tal:repeat="url url_list">
+  <li>${url}</li>
+</ul>
+
+<p>
+  <span class="clicked_clear_sources" tal:condition="show_clear == True">
+    Clear Sources
+  </span>
+</p>
+
+<script type="text/javascript" tal:condition="show_clear == True">
+  $( '.clicked_clear_sources' ).click(function() {
+    $.get( "clear_sources", function() {
+      $.get( "chart", function( chart ) {
+        $( '#container' ).html( chart );
+        $.get( "session", function( session ) {
+          $( '#session' ).html( session );
+        } );
+      } );
+    } );
+  } );
+</script>

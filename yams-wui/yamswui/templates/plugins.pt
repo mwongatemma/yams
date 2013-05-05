@@ -11,6 +11,9 @@ Plugins:
   $( '.clicked_plugin' ).click(function() {
     $.get( "plugin_instances/" + $( this ).text(), function( plugin_instances ) {
       $( '#plugin_instances' ).html( plugin_instances );
+      $.get( "session", function( session ) {
+        $( '#session' ).html( session );
+      } );
     } );
     $.get( "types/" + $( this ).text(), function( types ) {
       $( '#types' ).html( types );

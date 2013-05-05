@@ -8,11 +8,85 @@ from .models import (
     )
 
 
+@view_config(route_name='add_source')
+def add_source(request):
+    if 'plugin' in request.session:
+        plugin = request.session['plugin']
+    else:
+        return Response()
+
+    if 'hosts' in request.session:
+        hosts = request.session['hosts']
+    else:
+        return Response()
+
+    if 'type' in request.session:
+        type = request.session['type']
+    else:
+        return response()
+
+    if 'url_list' not in request.session:
+        request.session['url_list'] = []
+
+    for host in hosts:
+        url = 'data.csv/%s/%s' % (plugin, host)
+        if url not in request.session['url_list']:
+            request.session['url_list'].append(url)
+
+    print request.session['url_list']
+
+    return Response()
+
+
+@view_config(route_name='chart', renderer='templates/chart.pt')
+def chart(request):
+    if 'url_list' in request.session:
+        url_list = request.session['url_list']
+    else:
+        url_list = []
+    return {'url_list': url_list}
+
+
+@view_config(route_name='clear_sources')
+def clear_sources(request):
+    if 'url_list' in request.session:
+        request.session['url_list'] = []
+    return Response()
+
+
 @view_config(route_name='home', renderer='templates/mytemplate.pt')
 def my_view(request):
-    url_list = ['data.csv/load/tweety?dsnames=shortterm',
-                'data.csv/load/tweety?dsnames=longterm']
-    return {'url_list': url_list}
+    return {}
+
+
+@view_config(route_name='hosts', renderer='templates/hosts.pt')
+def hosts(request):
+    plugin = request.matchdict['plugin']
+    type = request.matchdict['type']
+
+    session = DBSession()
+
+    if plugin == 'postgresql':
+        # Because of potentially high volumes of postgres metrics, take
+        # advantage of the special partitioning schema used for the postgresql
+        # plugin.
+        pass
+    else:
+        # For performance reasons, find the most recent table partition for the
+        # plugin and get the types from that.
+        table = session.execute(
+                "SELECT tablename " \
+                "FROM pg_tables " \
+                "WHERE tablename LIKE 'vl\\_%s\\_%%' " \
+                "ORDER BY tablename DESC " \
+                "LIMIT 1;" % plugin).fetchone()['tablename']
+
+        hosts = session.execute(
+                "SELECT DISTINCT host " \
+                "FROM %s " \
+                "ORDER BY host;" % table)
+
+    return {'plugin': plugin, 'type': type, 'hosts': hosts}
 
 
 @view_config(route_name='data_csv')
@@ -162,6 +236,14 @@ def plugins(request):
 def plugin_instancess(request):
     plugin = request.matchdict['plugin']
 
+    request.session['plugin'] = plugin
+    if 'type' in request.session:
+        request.session['type'] = ''
+    if 'hosts' in request.session:
+        request.session['hosts'] = []
+    if 'dsnames' in request.session:
+        request.session['dsnames'] = []
+
     if plugin == 'postgresql':
         return Response()
 
@@ -186,6 +268,74 @@ def plugin_instancess(request):
         return Response()
 
     return {'plugin': plugin, 'plugin_instances': plugin_instances}
+
+
+@view_config(route_name='session', renderer='templates/session.pt')
+def session(request):
+    if 'plugin' in request.session:
+        plugin = request.session['plugin']
+    else:
+        plugin = ''
+
+    if 'type' in request.session:
+        type = request.session['type']
+    else:
+        type = ''
+
+    if 'hosts' in request.session:
+        hosts = request.session['hosts']
+    else:
+        hosts = []
+
+    if 'dsnames' in request.session:
+        dsnames = request.session['dsnames']
+    else:
+        dsnames = []
+
+    if 'url_list' not in request.session:
+        url_list = []
+    else:
+        url_list = request.session['url_list']
+
+    if plugin <> '' and type <> '' and len(hosts) > 0:
+        add_source = True
+    else:
+        add_source = False
+
+    if len(url_list) > 0:
+        show_clear = True
+    else:
+        show_clear = False
+
+    return {'plugin': plugin, 'type': type, 'hosts': ', '.join(hosts),
+            'dsnames': ', '.join(dsnames), 'url_list': url_list,
+            'add_source': add_source, 'show_clear': show_clear}
+
+
+@view_config(route_name='toggle_dsname')
+def toggle_dsname(request):
+    dsname = request.matchdict['dsname']
+    if 'dsnames' in request.session:
+        if dsname in request.session['dsnames']:
+            request.session['dsnames'].remove(dsname)
+        else:
+            request.session['dsnames'].append(dsname)
+    else:
+        request.session['dsnames'] = [dsname]
+    return Response()
+
+
+@view_config(route_name='toggle_host')
+def toggle_host(request):
+    host = request.matchdict['host']
+    if 'hosts' in request.session:
+        if host in request.session['hosts']:
+            request.session['hosts'].remove(host)
+        else:
+            request.session['hosts'].append(host)
+    else:
+        request.session['hosts'] = [host]
+    return Response()
 
 
 @view_config(route_name='types', renderer='templates/types.pt')
@@ -230,6 +380,10 @@ def types(request):
 def type_instances(request):
     plugin = request.matchdict['plugin']
     type = request.matchdict['type']
+
+    request.session['type'] = type
+    if 'dsnames' in request.session:
+        request.session['dsnames'] = []
 
     if plugin == 'postgresql':
         return Response()

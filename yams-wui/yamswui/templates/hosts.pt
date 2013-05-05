@@ -1,0 +1,14 @@
+Hosts:
+<ul tal:repeat="host hosts">
+  <li><span class="clicked_host">${host['host']}</span></li>
+</ul>
+
+<script type="text/javascript">
+  $( '.clicked_host' ).click(function() {
+    $.get( "toggle_host/" + $( this ).text(), function( host ) {
+      $.get( "session", function( session ) {
+        $( '#session' ).html( session );
+      } );
+    } );
+  });
+</script>

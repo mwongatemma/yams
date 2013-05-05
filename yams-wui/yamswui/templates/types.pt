@@ -5,15 +5,24 @@ Types of ${plugin} plugins:
 
 <div id="type_instances"></div>
 
+<div id="hosts"></div>
+
 <div id="dsnames"></div>
 
 <script type="text/javascript">
   $( '.clicked_type' ).click(function() {
-    $.get( "type_instances/" + $( this ).text() + "/${plugin}", function( type_instances ) {
+    var type = $( this ).text();
+    $.get( "type_instances/" + type + "/${plugin}", function( type_instances ) {
       $( '#type_instances' ).html( type_instances );
-    } );
-    $.get( "dsnames/" + $( this ).text() + "/${plugin}", function( dsnames ) {
-      $( '#dsnames' ).html( dsnames );
+      $.get( "hosts/" + type + "/${plugin}", function( hosts ) {
+        $( '#hosts' ).html( hosts );
+        $.get( "dsnames/" + type + "/${plugin}", function( dsnames ) {
+          $( '#dsnames' ).html( dsnames );
+          $.get( "session", function( session ) {
+            $( '#session' ).html( session );
+          } );
+        } );
+      } );
     } );
   });
 </script>
