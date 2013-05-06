@@ -1,6 +1,6 @@
 Plugins:
-<ul tal:repeat="plugin plugins">
-  <li><span class="clicked_plugin">${plugin['plugin']}</span></li>
+<ul>
+  <li tal:repeat="plugin plugins" class="clicked_plugin">${plugin['plugin']}</li>
 </ul>
 
 <div id="plugin_instances"></div>
@@ -9,15 +9,16 @@ Plugins:
 
 <script type="text/javascript">
   $( '.clicked_plugin' ).click(function() {
-    $.get( "plugin_instances/" + $( this ).text(), function( plugin_instances ) {
+    var plugin = $( this ).text();
+    $.get( "plugin_instances/" + plugin, function( plugin_instances ) {
       $( '#plugin_instances' ).html( plugin_instances );
-      $.get( "session", function( session ) {
-        $( '#session' ).html( session );
+      $.get( "types/" + plugin, function( types ) {
+        $( '#types' ).html( types );
+        $.get( "session", function( session ) {
+          $( '#session' ).html( session );
+        } );
       } );
     } );
-    $.get( "types/" + $( this ).text(), function( types ) {
-      $( '#types' ).html( types );
-    } );
-  });
+  } );
 </script>
 

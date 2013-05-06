@@ -1,4 +1,4 @@
 Instances of plugin ${plugin}:
-<ul tal:repeat="plugin_instance plugin_instances">
-  <li><span class="clicked_plugin_instances">${plugin_instance['plugin_instance']}</span></li>
+<ul>
+  <li tal:repeat="plugin_instance plugin_instances" class="clicked_plugin_instances">${plugin_instance['plugin_instance']}</li>
 </ul>

@@ -1,4 +1,4 @@
 Instances of type ${type}:
-<ul tal:repeat="type_instance type_instances">
-  <li><span class="clicked_type_instances">${type_instance['type_instance']}</span></li>
+<ul>
+  <li tal:repeat="type_instance type_instances" class="clicked_type_instances">${type_instance['type_instance']}</li>
 </ul>

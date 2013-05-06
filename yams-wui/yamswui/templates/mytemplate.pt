@@ -1,24 +1,14 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="UTF-8">
     <title>Yet Another Monitoring System</title>
     <script src="/static/jquery-2.0.0.min.js"></script>
     <script src="/static/flotr2.min.js"></script>
-    <style type="text/css">
-      body {
-        margin: 0px;
-        padding: 0px;
-      }
-      #container {
-        width : 600px;
-        height: 384px;
-        margin: 8px auto;
-      }
-    </style>
+    <link rel="stylesheet" href="static/yams.css" type="text/css" />
   </head>
   <body>
-    <div id="plugins" style="float: left; height: 100%; width: 100px">...</div>
-
+    <div id="plugins" style="float: left; height: 100%; width: 200px;">...</div>
     <script type="text/javascript">
       $( document ).ready( function() {
         $.get( "plugins", function( plugins ) {
@@ -37,7 +27,6 @@
     </script>
 
     <div id="session"></div>
-
     <script type="text/javascript">
       $( document ).ready( function() {
         $.get( "session", function( session ) {

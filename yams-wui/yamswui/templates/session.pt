@@ -26,8 +26,8 @@ Selected values:
 </script>
 
 Currently Plotted Data Sources:
-<ul tal:repeat="url url_list">
-  <li>${url}</li>
+<ul>
+  <li tal:repeat="url url_list">${url}</li>
 </ul>
 
 <p>

@@ -1,6 +1,6 @@
 Types of ${plugin} plugins:
-<ul tal:repeat="type types">
-  <li><span class="clicked_type">${type['type']}</span></li>
+<ul>
+  <li tal:repeat="type types" class="clicked_type">${type['type']}</li>
 </ul>
 
 <div id="type_instances"></div>
@@ -24,5 +24,5 @@ Types of ${plugin} plugins:
         } );
       } );
     } );
-  });
+  } );
 </script>
