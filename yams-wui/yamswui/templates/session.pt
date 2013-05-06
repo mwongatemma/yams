@@ -4,6 +4,7 @@ Selected values:
   <li>Type (req): ${type}</li>
   <li>Host (req): ${hosts}</li>
   <li>Data Sets: ${dsnames}</li>
+  <li tal:repeat="(key, value) meta.items()">${key}: ${value}</li>
 </ul>
 
 <p>
@@ -21,6 +22,32 @@ Selected values:
           $( '#session' ).html( session );
         } );
       } );
+    } );
+  } );
+</script>
+
+<form id="metaform" tal:condition="len(meta_keys) > 0" action="">
+  <p>
+    Metadata Manual Input:<br>
+	Key:
+    <select id="key" name="key">
+      <option tal:repeat="key meta_keys" value="${key}">${key}</option>
+    </select>
+	Value: <input id="value" type="text" name="value">
+    <input type="submit" class="button">
+  </p>
+</form>
+<script>
+  $( function() {
+    $( ".button" ).click( function() {
+      var key = $( "select#key" ).val();
+          value = $( "input#value" ).val();
+      $.get( "toggle_meta/" + key + "/" + value, function() {
+        $.get( "session", function( session ) {
+          $( '#session' ).html( session );
+        } );
+      } );
+      return false;
     } );
   } );
 </script>

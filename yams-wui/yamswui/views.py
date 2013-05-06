@@ -32,6 +32,11 @@ def add_source(request):
     else:
         return Response()
 
+    if 'meta' in request.session:
+        meta = request.session['meta']
+    else:
+        return Response()
+
     if 'url_list' not in request.session:
         request.session['url_list'] = []
 
@@ -41,6 +46,14 @@ def add_source(request):
         if len(dsnames) > 0:
             url += '&' + \
                     '&'.join(['dsnames=%s' % dsname for dsname in dsnames])
+
+            # Append meta data by create an array of keys, then the key with
+            # its value.
+            url += '&' + \
+                    '&'.join(['meta=%s' % key for key in meta.iterkeys()])
+            url += '&' + \
+                    '&'.join(['%s=%s' % (key, value) \
+                            for (key, value) in meta.iteritems()])
         if url not in request.session['url_list']:
             request.session['url_list'].append(url)
 
@@ -132,21 +145,13 @@ def data_csv(request):
         where_condition += ' AND type = :type'
         sql_params['type'] = request.params['type']
 
-    if 'database' in request.params:
-        where_condition += ' AND meta -> \'database\' = :database'
-        sql_params['database'] = request.params['database']
+    if 'meta' in request.params:
+        keys = request.params.getall('meta')
 
-    if 'schema' in request.params:
-        where_condition += ' AND meta -> \'schema\' = :schema'
-        sql_params['schema'] = request.params['schema']
-
-    if 'table' in request.params:
-        where_condition += ' AND meta -> \'table\' = :table'
-        sql_params['table'] = request.params['table']
-
-    if 'index' in request.params:
-        where_condition += ' AND meta -> \'index\' = :index'
-        sql_params['index'] = request.params['index']
+        for key in keys:
+            where_condition += ' AND meta -> \'%(key)s\' = :%(key)s' % \
+                    {'key': key}
+            sql_params[key] = request.params[key]
 
     session = DBSession()
 
@@ -165,6 +170,10 @@ def data_csv(request):
             "WHERE plugin = :plugin " \
             "%s " \
             "LIMIT 1;""" % where_condition, sql_params).first()
+    if not result:
+        # These query parameters do not return any data.
+        return Response('')
+
     dsnames = result['dsnames']
     dstypes = result['dstypes']
     prefix = result['prefix']
@@ -179,7 +188,7 @@ def data_csv(request):
         plot_dsnames = dsnames
 
     if len(plot_dsnames) == 0:
-        # No need to continue if ther eis nothing to plot.
+        # No need to continue if there is nothing to plot.
         return Response('')
 
     # Cast the timestamp with time zone to without time zone, which should
@@ -266,6 +275,8 @@ def plugin_instancess(request):
         request.session['hosts'] = []
     if 'dsnames' in request.session:
         request.session['dsnames'] = []
+    if 'meta' in request.session:
+        request.session['meta'] = {}
 
     if plugin == 'postgresql':
         return Response()
@@ -295,6 +306,8 @@ def plugin_instancess(request):
 
 @view_config(route_name='session', renderer='templates/session.pt')
 def session(request):
+    session = DBSession()
+
     if 'plugin' in request.session:
         plugin = request.session['plugin']
     else:
@@ -319,6 +332,10 @@ def session(request):
         request.session['url_list'] = []
     url_list = request.session['url_list']
 
+    if 'meta' not in request.session:
+        request.session['meta'] = {}
+    meta = request.session['meta']
+
     if plugin <> '' and type <> '' and len(hosts) > 0:
         add_source = True
     else:
@@ -329,9 +346,30 @@ def session(request):
     else:
         show_clear = False
 
+    # Create input form for meta data only for the postgresql plugin.
+    if plugin == 'postgresql':
+        # Because of potentially high volumes of postgres metrics, take
+        # advantage of the special partitioning schema used for the
+        # postgresql plugin.
+        tablename = session.execute(
+                "SELECT tablename " \
+                "FROM pg_tables " \
+                "WHERE schemaname = 'collectd' " \
+                "  AND substring(tablename, " \
+                "      'vl_postgresql_\d\d\d\d\d\d\d\d_%s') IS NOT NULL " \
+                "ORDER BY tablename;" % type).fetchone()['tablename']
+
+        meta_keys = session.execute(
+                "SELECT akeys(meta) AS keys " \
+                "FROM %s " \
+                "LIMIT 1;" % tablename).fetchone()['keys']
+    else:
+        meta_keys = []
+
     return {'plugin': plugin, 'type': type, 'hosts': ', '.join(hosts),
             'dsnames': ', '.join(dsnames), 'url_list': url_list,
-            'add_source': add_source, 'show_clear': show_clear}
+            'add_source': add_source, 'show_clear': show_clear,
+            'meta_keys': meta_keys, 'meta': meta}
 
 
 @view_config(route_name='toggle_dsname')
@@ -360,6 +398,19 @@ def toggle_host(request):
     return Response()
 
 
+@view_config(route_name='toggle_meta')
+def toggle_meta(request):
+    key = request.matchdict['key']
+    value = request.matchdict['value']
+
+    if 'meta' not in request.session:
+        request.session['meta'] = {}
+
+    request.session['meta'][key] = value
+
+    return Response()
+
+
 @view_config(route_name='types', renderer='templates/types.pt')
 def types(request):
     plugin = request.matchdict['plugin']
@@ -375,7 +426,6 @@ def types(request):
                 "       'vl_postgresql_\d\d\d\d\d\d\d\d_(.*)') AS type " \
                 "FROM pg_tables " \
                 "WHERE schemaname = 'collectd' " \
-                "  AND tablename LIKE 'vl\\_%' " \
                 "  AND substring(tablename, " \
                 "      'vl_postgresql_\d\d\d\d\d\d\d\d_(.*)') IS NOT NULL " \
                 "ORDER BY type;")
