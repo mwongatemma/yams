@@ -10,8 +10,10 @@ from .models import (
 
 @view_config(route_name='add_source')
 def add_source(request):
+    params = {}
+
     if 'plugin' in request.session:
-        plugin = request.session['plugin']
+        params['plugin'] = request.session['plugin']
     else:
         return Response()
 
@@ -21,19 +23,26 @@ def add_source(request):
         return Response()
 
     if 'type' in request.session:
-        type = request.session['type']
+        params['type'] = request.session['type']
     else:
         return response()
+
+    if 'dsnames' in request.session:
+        dsnames = request.session['dsnames']
+    else:
+        return Response()
 
     if 'url_list' not in request.session:
         request.session['url_list'] = []
 
     for host in hosts:
-        url = 'data.csv/%s/%s' % (plugin, host)
+        params['host'] = host
+        url = 'data.csv/%(plugin)s/%(host)s?type=%(type)s' % params
+        if len(dsnames) > 0:
+            url += '&' + \
+                    '&'.join(['dsnames=%s' % dsname for dsname in dsnames])
         if url not in request.session['url_list']:
             request.session['url_list'].append(url)
-
-    print request.session['url_list']
 
     return Response()
 
