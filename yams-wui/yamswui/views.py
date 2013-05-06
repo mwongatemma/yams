@@ -316,9 +316,8 @@ def session(request):
         dsnames = []
 
     if 'url_list' not in request.session:
-        url_list = []
-    else:
-        url_list = request.session['url_list']
+        request.session['url_list'] = []
+    url_list = request.session['url_list']
 
     if plugin <> '' and type <> '' and len(hosts) > 0:
         add_source = True
