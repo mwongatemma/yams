@@ -90,7 +90,7 @@ struct opts
 	int rcount;
 };
 
-inline int create_partition_index(PGconn *, const char *, char *);
+inline int create_partition_indexes(PGconn *, const char *, char *);
 int create_partition_table(PGconn *, char *, const char *, const char *,
 		time_t);
 inline int do_command(PGconn *, char *);
@@ -101,7 +101,7 @@ void *thread_main(void *data);
 void usage();
 inline int work(struct opts *);
 
-inline int create_partition_index(PGconn *conn, const char *plugin,
+inline int create_partition_indexes(PGconn *conn, const char *plugin,
 		char *tablename)
 {
 	char sql[SQL_LEN + 1];
@@ -150,6 +150,11 @@ inline int create_partition_index(PGconn *conn, const char *plugin,
 		if (do_command(conn, sql) != 0)
 			return 1;
 	}
+
+	snprintf(sql, SQL_LEN,
+			"CREATE INDEX ON %s (host);", tablename);
+	if (do_command(conn, sql) != 0)
+		return 1;
 
 	return 0;
 }
@@ -201,7 +206,7 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 			return 1;
 	}
 
-	create_partition_index(conn, plugin, tablename);
+	create_partition_indexes(conn, plugin, tablename);
 
 	if (do_command(conn, "COMMIT;") != 0)
 		return 1;

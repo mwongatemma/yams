@@ -66,14 +66,16 @@ def hosts(request):
 
     session = DBSession()
 
+    # For performance reasons, find the most recent table partition for the
+    # plugin and get the hosts from that.
     if plugin == 'postgresql':
-        # Because of potentially high volumes of postgres metrics, take
-        # advantage of the special partitioning schema used for the postgresql
-        # plugin.
-        pass
+        table = session.execute(
+                "SELECT tablename " \
+                "FROM pg_tables " \
+                "WHERE tablename LIKE 'vl\\_postgresql\\_%%_%s' " \
+                "ORDER BY tablename DESC " \
+                "LIMIT 1;" % type).fetchone()['tablename']
     else:
-        # For performance reasons, find the most recent table partition for the
-        # plugin and get the types from that.
         table = session.execute(
                 "SELECT tablename " \
                 "FROM pg_tables " \
@@ -81,10 +83,22 @@ def hosts(request):
                 "ORDER BY tablename DESC " \
                 "LIMIT 1;" % plugin).fetchone()['tablename']
 
-        hosts = session.execute(
-                "SELECT DISTINCT host " \
-                "FROM %s " \
-                "ORDER BY host;" % table)
+    # Take advantage of the column index on host by using a recursive query.
+    hosts = session.execute(
+            "WITH RECURSIVE t(n) AS (" \
+            "    SELECT min(host) " \
+            "    FROM %(table)s " \
+            "    UNION ALL " \
+            "    SELECT (SELECT host " \
+            "            FROM %(table)s " \
+            "            WHERE host > n " \
+            "            ORDER BY host " \
+            "            LIMIT 1) " \
+            "    FROM t WHERE n IS NOT NULL " \
+            ") " \
+            "SELECT n AS host " \
+            "FROM t " \
+            "WHERE n <> '';" % {'table': table})
 
     return {'plugin': plugin, 'type': type, 'hosts': hosts}
 
