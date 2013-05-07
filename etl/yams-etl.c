@@ -90,18 +90,18 @@ struct opts
 	int rcount;
 };
 
-inline int create_partition_indexes(PGconn *, const char *, char *);
+static inline int create_partition_indexes(PGconn *, const char *, char *);
 int create_partition_table(PGconn *, char *, const char *, const char *,
 		time_t);
-inline int do_command(PGconn *, char *);
+static inline int do_command(PGconn *, char *);
 int do_insert(PGconn *, char *);
 int load(PGconn *, json_object *);
 int process(PGconn *, char *);
 void *thread_main(void *data);
 void usage();
-inline int work(struct opts *);
+static inline int work(struct opts *);
 
-inline int create_partition_indexes(PGconn *conn, const char *plugin,
+static inline int create_partition_indexes(PGconn *conn, const char *plugin,
 		char *tablename)
 {
 	char sql[SQL_LEN + 1];
@@ -214,7 +214,7 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 	return 0;
 }
 
-inline int do_command(PGconn *conn, char *sql)
+static inline int do_command(PGconn *conn, char *sql)
 {
 	PGresult *res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK) {
@@ -379,7 +379,7 @@ void usage()
 	printf("                [--workers <threads>|-w <threads>]\n");
 }
 
-inline int work(struct opts *options)
+static inline int work(struct opts *options)
 {
 	redisContext *redis;
 	redisReply *reply;
