@@ -17,6 +17,11 @@ def add_source(request):
     else:
         return Response()
 
+    if 'plugin_instance' in request.session:
+        plugin_instance = request.session['plugin_instance']
+    else:
+        plugin_instance = ''
+
     if 'hosts' in request.session:
         hosts = request.session['hosts']
     else:
@@ -27,10 +32,15 @@ def add_source(request):
     else:
         return response()
 
+    if 'type_instance' in request.session:
+        type_instance = request.session['type_instance']
+    else:
+        type_instance = ''
+
     if 'dsnames' in request.session:
         dsnames = request.session['dsnames']
     else:
-        return Response()
+        dsnames = []
 
     if 'meta' in request.session:
         meta = request.session['meta']
@@ -40,9 +50,17 @@ def add_source(request):
     if 'url_list' not in request.session:
         request.session['url_list'] = []
 
+
     for host in hosts:
         params['host'] = host
         url = 'data.csv/%(plugin)s/%(host)s?type=%(type)s' % params
+
+        if len(plugin_instance) > 0:
+            url += '&plugin_instance=%s' % plugin_instance
+
+        if len(type_instance) > 0:
+            url += '&type_instance=%s' % type_instance
+
         if len(dsnames) > 0:
             url += '&' + \
                     '&'.join(['dsnames=%s' % dsname for dsname in dsnames])
@@ -141,9 +159,17 @@ def data_csv(request):
 
     where_condition = ''
 
+    if 'plugin_instance' in request.params:
+        where_condition += ' AND plugin_instance = :plugin_instance'
+        sql_params['plugin_instance'] = request.params['plugin_instance']
+
     if 'type' in request.params:
         where_condition += ' AND type = :type'
         sql_params['type'] = request.params['type']
+
+    if 'type_instance' in request.params:
+        where_condition += ' AND type_instance = :type_instance'
+        sql_params['type_instance'] = request.params['type_instance']
 
     if 'meta' in request.params:
         keys = request.params.getall('meta')
@@ -203,6 +229,8 @@ def data_csv(request):
             "AND time > CURRENT_TIMESTAMP - INTERVAL '1 HOUR' " \
             "%s " \
             "ORDER BY time;" % where_condition, sql_params)
+    if data.rowcount == 0:
+        return Response('')
 
     csv = 'timestamp,%s\n' % \
             ','.join(['%s.%s.%s' % \
@@ -265,12 +293,17 @@ def plugins(request):
 
 @view_config(route_name='plugin_instances',
         renderer='templates/plugin_instances.pt')
-def plugin_instancess(request):
+def plugin_instances(request):
     plugin = request.matchdict['plugin']
 
     request.session['plugin'] = plugin
+    # Reset all parameters when the plugin is selected.
+    if 'plugin_instance' in request.session:
+        request.session['plugin_instance'] = ''
     if 'type' in request.session:
         request.session['type'] = ''
+    if 'type_instance' in request.session:
+        request.session['type_instance'] = ''
     if 'hosts' in request.session:
         request.session['hosts'] = []
     if 'dsnames' in request.session:
@@ -313,10 +346,20 @@ def session(request):
     else:
         plugin = ''
 
+    if 'plugin_instance' in request.session:
+        plugin_instance = request.session['plugin_instance']
+    else:
+        plugin_instance = ''
+
     if 'type' in request.session:
         type = request.session['type']
     else:
         type = ''
+
+    if 'type_instance' in request.session:
+        type_instance = request.session['type_instance']
+    else:
+        type_instance = ''
 
     if 'hosts' in request.session:
         hosts = request.session['hosts']
@@ -369,7 +412,8 @@ def session(request):
     return {'plugin': plugin, 'type': type, 'hosts': ', '.join(hosts),
             'dsnames': ', '.join(dsnames), 'url_list': url_list,
             'add_source': add_source, 'show_clear': show_clear,
-            'meta_keys': meta_keys, 'meta': meta}
+            'meta_keys': meta_keys, 'meta': meta,
+            'plugin_instance': plugin_instance, 'type_instance': type_instance}
 
 
 @view_config(route_name='toggle_dsname')
@@ -407,6 +451,36 @@ def toggle_meta(request):
         request.session['meta'] = {}
 
     request.session['meta'][key] = value
+
+    return Response()
+
+
+@view_config(route_name='toggle_plugin_instance')
+def toggle_plugin_instance(request):
+    plugin_instance = request.matchdict['plugin_instance']
+
+    if 'plugin_instance' not in request.session:
+        request.session['plugin_instance'] = ''
+    elif 'plugin_instance' in request.session and \
+            request.session['plugin_instance'] == plugin_instance:
+        request.session['plugin_instance'] = ''
+    else:
+        request.session['plugin_instance'] = plugin_instance
+
+    return Response()
+
+
+@view_config(route_name='toggle_type_instance')
+def toggle_type_instance(request):
+    type_instance = request.matchdict['type_instance']
+
+    if 'type_instance' not in request.session:
+        request.session['type_instance'] = ''
+    elif 'type_instance' in request.session and \
+            request.session['type_instance'] == type_instance:
+        request.session['type_instance'] = ''
+    else:
+        request.session['type_instance'] = type_instance
 
     return Response()
 

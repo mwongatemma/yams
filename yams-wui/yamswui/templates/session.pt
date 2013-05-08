@@ -1,7 +1,9 @@
 Selected values:
 <ul>
   <li>Plugin (req): ${plugin}</li>
+  <li>Plugin Instance: ${plugin_instance}</li>
   <li>Type (req): ${type}</li>
+  <li>Type Instance: ${type_instance}</li>
   <li>Host (req): ${hosts}</li>
   <li>Data Sets: ${dsnames}</li>
   <li tal:repeat="(key, value) meta.items()">${key}: ${value}</li>

@@ -2,3 +2,13 @@ Instances of plugin ${plugin}:
 <ul>
   <li tal:repeat="plugin_instance plugin_instances" class="clicked_plugin_instances">${plugin_instance['plugin_instance']}</li>
 </ul>
+
+<script type="text/javascript">
+  $( '.clicked_plugin_instances' ).click(function() {
+    $.get( "toggle_plugin_instance/" + $( this ).text(), function() {
+      $.get( "session", function( session ) {
+        $( '#session' ).html( session );
+      } );
+    } );
+  } );
+</script>

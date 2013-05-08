@@ -31,6 +31,10 @@ def main(global_config, **settings):
     config.add_route('toggle_dsname', '/toggle_dsname/{dsname}')
     config.add_route('toggle_host', '/toggle_host/{host}')
     config.add_route('toggle_meta', '/toggle_meta/{key}/{value}')
+    config.add_route('toggle_plugin_instance',
+            '/toggle_plugin_instance/{plugin_instance}')
+    config.add_route('toggle_type_instance',
+            '/toggle_type_instance/{type_instance}')
     config.add_route('types', '/types/{plugin}')
     config.add_route('type_instances', '/type_instances/{type}/{plugin}')
     config.scan()
