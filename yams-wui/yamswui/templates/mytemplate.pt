@@ -17,6 +17,28 @@
       } );
     </script>
 
+    <form id="timeform" action="">
+      Plotting the past
+      <input id="value" type="text" name="value" value="${time_range}" size="4">
+      hour(s) <input type="submit" class="time_button" value="Update">
+    </form>
+    <script>
+      $( function() {
+        $( ".time_button" ).click( function() {
+          var value = $( "input#value" ).val();
+          $.get( "toggle_time_range/" + value, function() {
+            $.get( "session", function( session ) {
+              $( '#session' ).html( session );
+            } );
+            $.get( "chart", function( chart ) {
+              $( '#container' ).html( chart );
+            } );
+          } );
+          return false;
+        } );
+      } );
+    </script>
+
     <div id="container"></div>
     <script type="text/javascript">
       $( document ).ready( function() {

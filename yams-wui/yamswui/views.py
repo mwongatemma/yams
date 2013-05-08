@@ -50,7 +50,6 @@ def add_source(request):
     if 'url_list' not in request.session:
         request.session['url_list'] = []
 
-
     for host in hosts:
         params['host'] = host
         url = 'data.csv/%(plugin)s/%(host)s?type=%(type)s' % params
@@ -96,7 +95,9 @@ def clear_sources(request):
 
 @view_config(route_name='home', renderer='templates/mytemplate.pt')
 def my_view(request):
-    return {}
+    if 'time_range' not in request.session:
+        request.session['time_range'] = 1
+    return {'time_range': request.session['time_range']}
 
 
 @view_config(route_name='hosts', renderer='templates/hosts.pt')
@@ -148,7 +149,11 @@ def data_csv(request):
     plugin = request.matchdict['plugin']
     host = request.matchdict['host']
 
-    sql_params = {'plugin': plugin, 'host': host}
+    if 'time_range' not in request.session:
+        request.session['time_range'] = 1
+
+    sql_params = {'plugin': plugin, 'host': host,
+            'time_range': request.session['time_range']}
 
     # Not sure if there is a faster way, but always get the entire dataset from
     # the database, and filter out the values we don't want specified by the
@@ -198,7 +203,7 @@ def data_csv(request):
             "LIMIT 1;""" % where_condition, sql_params).first()
     if not result:
         # These query parameters do not return any data.
-        return Response('')
+        return Response()
 
     dsnames = result['dsnames']
     dstypes = result['dstypes']
@@ -215,7 +220,7 @@ def data_csv(request):
 
     if len(plot_dsnames) == 0:
         # No need to continue if there is nothing to plot.
-        return Response('')
+        return Response()
 
     # Cast the timestamp with time zone to without time zone, which should
     # result in the system timezone because I can't figure out the format to
@@ -226,11 +231,11 @@ def data_csv(request):
             "FROM value_list " \
             "WHERE plugin = :plugin " \
             "AND host = :host " \
-            "AND time > CURRENT_TIMESTAMP - INTERVAL '1 HOUR' " \
+            "AND time > CURRENT_TIMESTAMP - INTERVAL ':time_range HOUR' " \
             "%s " \
             "ORDER BY time;" % where_condition, sql_params)
     if data.rowcount == 0:
-        return Response('')
+        return Response()
 
     csv = 'timestamp,%s\n' % \
             ','.join(['%s.%s.%s' % \
@@ -466,6 +471,17 @@ def toggle_plugin_instance(request):
         request.session['plugin_instance'] = ''
     else:
         request.session['plugin_instance'] = plugin_instance
+
+    return Response()
+
+
+@view_config(route_name='toggle_time_range')
+def toggle_time_range(request):
+    try:
+        value = int(request.matchdict['value'])
+        request.session['time_range'] = value
+    except Exception, e:
+        request.session['time_range'] = 1
 
     return Response()
 
