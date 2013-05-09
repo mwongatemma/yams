@@ -7,4 +7,4 @@ table_stats seq_scan:COUNTER:0:U seq_tup_read:COUNTER:0:U, idx_scan:COUNTER:0:U,
 # pg_stat_all_indexes and pg_statio_all_indexes combined
 index_stats idx_scan:COUNTER:0:U idx_tup_read:COUNTER:0:U idx_tup_fetch:COUNTER:0:U idx_blks_read:COUNTER:0:U idx_blks_hit:COUNTER:0:U
 
-table_size total_relation_size:GAUGE:0:U, table_size:GAUGE:0:U, indexes_size:GAUGE:0:U
+table_sizes total_relation_size:GAUGE:0:U, table_size:GAUGE:0:U, indexes_size:GAUGE:0:U
