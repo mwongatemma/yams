@@ -151,6 +151,11 @@ static inline int create_partition_indexes(PGconn *conn, const char *plugin,
 			return 1;
 	}
 
+	snprintf(sql, SQL_LEN,
+			"CREATE INDEX ON %s (host);", tablename);
+	if (do_command(conn, sql) != 0)
+		return 1;
+
 	return 0;
 }
 
