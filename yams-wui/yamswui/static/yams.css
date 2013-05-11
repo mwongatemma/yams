@@ -1,0 +1,9 @@
+body {
+  margin: 0px;
+  padding: 0px;
+}
+#container {
+  width : 600px;
+  height: 384px;
+  margin: 8px auto;
+}

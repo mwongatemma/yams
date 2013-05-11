@@ -1,0 +1,24 @@
+Plugins:
+<ul>
+  <li tal:repeat="plugin plugins" class="clicked_plugin">${plugin['plugin']}</li>
+</ul>
+
+<div id="plugin_instances"></div>
+
+<div id="types"></div>
+
+<script type="text/javascript">
+  $( '.clicked_plugin' ).click(function() {
+    var plugin = $( this ).text();
+    $.get( "plugin_instances/" + plugin, function( plugin_instances ) {
+      $( '#plugin_instances' ).html( plugin_instances );
+      $.get( "types/" + plugin, function( types ) {
+        $( '#types' ).html( types );
+        $.get( "session", function( session ) {
+          $( '#session' ).html( session );
+        } );
+      } );
+    } );
+  } );
+</script>
+

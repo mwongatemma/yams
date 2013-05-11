@@ -1,5 +1,4 @@
 import os
-import sys
 
 from setuptools import setup, find_packages
 
@@ -20,12 +19,12 @@ requires = [
     ]
 
 setup(name='yams-wui',
-      version='0.0',
+      version='0.1',
       description='yams-wui',
-      long_description=README + '\n\n' +  CHANGES,
+      long_description=README + '\n\n' + CHANGES,
       classifiers=[
         "Programming Language :: Python",
-        "Framework :: Pylons",
+        "Framework :: Pyramid",
         "Topic :: Internet :: WWW/HTTP",
         "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
         ],
@@ -37,11 +36,11 @@ setup(name='yams-wui',
       include_package_data=True,
       zip_safe=False,
       test_suite='yamswui',
-      install_requires = requires,
-      entry_points = """\
+      install_requires=requires,
+      entry_points="""\
       [paste.app_factory]
       main = yamswui:main
+      [console_scripts]
+      initialize_yams-wui_db = yamswui.scripts.initializedb:main
       """,
-      paster_plugins=['pyramid'],
       )
-

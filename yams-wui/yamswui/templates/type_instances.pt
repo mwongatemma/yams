@@ -1,0 +1,14 @@
+Instances of type ${type}:
+<ul>
+  <li tal:repeat="type_instance type_instances" class="clicked_type_instances">${type_instance['type_instance']}</li>
+</ul>
+
+<script type="text/javascript">
+  $( '.clicked_type_instances' ).click(function() {
+    $.get( "toggle_type_instance/" + $( this ).text(), function() {
+      $.get( "session", function( session ) {
+        $( '#session' ).html( session );
+      } );
+    } );
+  } );
+</script>

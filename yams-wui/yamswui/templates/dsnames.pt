@@ -1,0 +1,14 @@
+${type} Data Sets:
+<ul>
+  <li tal:repeat="dsname dsnames" class="clicked_dsname">${dsname}</li>
+</ul>
+
+<script type="text/javascript">
+  $( '.clicked_dsname' ).click(function() {
+    $.get( "toggle_dsname/" + $( this ).text(), function() {
+      $.get( "session", function( session ) {
+        $( '#session' ).html( session );
+      } );
+    } );
+  } );
+</script>

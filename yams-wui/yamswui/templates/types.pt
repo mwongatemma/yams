@@ -1,0 +1,28 @@
+Types of ${plugin} plugins:
+<ul>
+  <li tal:repeat="type types" class="clicked_type">${type['type']}</li>
+</ul>
+
+<div id="type_instances"></div>
+
+<div id="hosts"></div>
+
+<div id="dsnames"></div>
+
+<script type="text/javascript">
+  $( '.clicked_type' ).click(function() {
+    var type = $( this ).text();
+    $.get( "type_instances/" + type + "/${plugin}", function( type_instances ) {
+      $( '#type_instances' ).html( type_instances );
+      $.get( "hosts/" + type + "/${plugin}", function( hosts ) {
+        $( '#hosts' ).html( hosts );
+        $.get( "dsnames/" + type + "/${plugin}", function( dsnames ) {
+          $( '#dsnames' ).html( dsnames );
+          $.get( "session", function( session ) {
+            $( '#session' ).html( session );
+          } );
+        } );
+      } );
+    } );
+  } );
+</script>

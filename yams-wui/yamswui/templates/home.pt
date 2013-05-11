@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Yet Another Monitoring System</title>
+    <script src="/static/jquery-2.0.0.min.js"></script>
+    <script src="/static/flotr2.min.js"></script>
+    <link rel="stylesheet" href="static/yams.css" type="text/css" />
+  </head>
+  <body>
+    <div id="plugins" style="float: left; height: 100%; width: 200px;">...</div>
+    <script type="text/javascript">
+      $( document ).ready( function() {
+        $.get( "plugins", function( plugins ) {
+          $( '#plugins' ).html( plugins );
+        } );
+      } );
+    </script>
+
+    <form id="timeform" action="" onsubmit="return false">
+      Plotting the past
+      <input id="timevalue" type="text" name="timevalue" value="${time_range}" size="4">
+      hour(s) <input type="submit" class="time_button" value="Update"> |
+      <span class="clicked_save_image">Save Image</span>
+    </form>
+    <script type="text/javascript">
+      $( function() {
+        $( ".time_button" ).click( function() {
+          var value = $( "input#timevalue" ).val();
+          $.get( "toggle_time_range/" + value, function() {
+            $.get( "session", function( session ) {
+              $( '#session' ).html( session );
+            } );
+            $.get( "chart", function( chart ) {
+              $( '#chart_area' ).html( chart );
+            } );
+          } );
+          return false;
+        } );
+      } );
+    </script>
+
+    <div id="chart_area"></div>
+    <script type="text/javascript">
+      $( document ).ready( function() {
+        $.get( "chart", function( chart ) {
+          $( '#chart_area' ).html( chart );
+        } );
+      } );
+    </script>
+
+    <div id="session"></div>
+    <script type="text/javascript">
+      $( document ).ready( function() {
+        $.get( "session", function( session ) {
+          $( '#session' ).html( session );
+        } );
+      } );
+    </script>
+  </body>
+</html>
