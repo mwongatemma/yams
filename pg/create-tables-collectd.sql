@@ -1,9 +1,3 @@
--- This composite type is for helping convert json to hstore.
-CREATE TYPE json2hstore AS (
-  key TEXT,
-  value TEXT
-);
-
 -- Parent table
 CREATE TABLE value_list (
   time TIMESTAMP WITH TIME ZONE NOT NULL,
