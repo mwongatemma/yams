@@ -1,4 +1,0 @@
-Run the create-database.sh to create the database.  This shell script defines
-PostgreSQL user names and a tablespace name.  The PostgreSQL DBA still needs to
-create a matching tablespace in the database, which by default is called
-'collectd'.

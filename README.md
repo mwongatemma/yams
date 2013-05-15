@@ -38,3 +38,6 @@ The WUI is an application built on Pyramid using Flotr2.
 * Pyramid 1.4
 * Redis 2.2
 * spawn-fcgi 1.6
+
+A script is provided for Vagrant http://www.vagrantup.com that will build a
+working system with YAMS running on it.

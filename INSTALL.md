@@ -124,6 +124,8 @@ stored in Redis and insert it into the database:
 
 ## YAMS WUI
 
+### Standalone
+
 The Pyramid application can be deployed with many Web servers.  It can also be
 started using pserve, which is provided by Pyramid.  Here is an example of
 using virtualenvwrapper http://virtualenvwrapper.readthedocs.org/en/latest/ to
@@ -134,3 +136,15 @@ set up a virtual environment.
     cd yams-wui
     python setup.py install
     pserve production.ini
+
+### Apache
+
+Here is an example for an Apache config with mod_wsgi enabled that will put the
+YAMS WUI at the root:
+
+	    WSGIScriptAlias / /usr/local/bin/pyramid.wsgi
+	    <Directory /usr/local/src/yams/yams-wui>
+		    WSGIProcessGroup pyramid
+		    Order allow,deny
+		    Allow from all
+	    </Directory>

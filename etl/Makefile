@@ -5,7 +5,7 @@ INSTALL= cp -p
 all: yams-etl yams-etl-fcgi
 
 yams-etl: yams-etl.c Makefile
-	cc -g -Wall -o $@ $< -lfcgi -lhiredis -ljson -lpq -lpthread
+	cc -g -Wall ${CFLAGS} -o $@ $< -lfcgi -lhiredis -ljson -lpq -lpthread
 
 yams-etl-fcgi: yams-etl-fcgi.c Makefile
 	cc -g -Wall -o $@ $< -lfcgi -lhiredis
