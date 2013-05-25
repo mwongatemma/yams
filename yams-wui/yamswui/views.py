@@ -47,6 +47,11 @@ def add_source(request):
     else:
         return Response()
 
+    if 'percentage' in request.session:
+        percentage = request.session['percentage']
+    else:
+        percentage = False
+
     if 'url_list' not in request.session:
         request.session['url_list'] = []
 
@@ -71,6 +76,10 @@ def add_source(request):
             url += '&' + \
                     '&'.join(['%s=%s' % (key, value) \
                             for (key, value) in meta.iteritems()])
+
+        if percentage:
+            url += '&percentage=1'
+
         if url not in request.session['url_list']:
             request.session['url_list'].append(url)
 
@@ -83,7 +92,18 @@ def chart(request):
         url_list = request.session['url_list']
     else:
         url_list = []
-    return {'url_list': url_list}
+
+    # If there is any source that isn't a percentage, then don't set the max to
+    # 100.
+    ymax = 'max: 100,'
+    for url in url_list:
+        if 'percentage=1' in url:
+            continue
+        percentage = False
+        ymax = ''
+        break
+
+    return {'url_list': url_list, 'ymax': ymax}
 
 
 @view_config(route_name='clear_sources')
@@ -162,14 +182,22 @@ def data_csv(request):
     if 'dsnames' in request.params:
         wanted_dsnames = request.params.getall('dsnames')
 
+    if 'percentage' in request.params and request.params['percentage'] == '1':
+        percentage = True
+    else:
+        percentage = False
+
     where_condition = ''
+    per_condition = ''
 
     if 'plugin_instance' in request.params:
         where_condition += ' AND plugin_instance = :plugin_instance'
+        per_condition += ' AND plugin_instance = :plugin_instance'
         sql_params['plugin_instance'] = request.params['plugin_instance']
 
     if 'type' in request.params:
         where_condition += ' AND type = :type'
+        per_condition += ' AND type = :type'
         sql_params['type'] = request.params['type']
 
     if 'type_instance' in request.params:
@@ -230,18 +258,43 @@ def data_csv(request):
 
     sql_params['time_dt'] = time_dt
 
-    # Cast the timestamp with time zone to without time zone, which should
-    # result in the system timezone because I can't figure out the format to
-    # make d3 read the time zone correctly.
-    data = session.execute(
-            "SELECT extract(EPOCH FROM time)::BIGINT * 1000 AS ctime_ms, " \
-            "       values " \
-            "FROM value_list " \
-            "WHERE plugin = :plugin " \
-            "AND host = :host " \
-            "AND time > :time_dt " \
-            "%s " \
-            "ORDER BY time;" % where_condition, sql_params)
+    if percentage:
+        sql = "WITH totals AS (" \
+                "    SELECT time, sum(values) AS values " \
+                "    FROM value_list " \
+                "    WHERE plugin = :plugin " \
+                "      AND time >= :time_dt " \
+                "      %(per_where)s " \
+                "    GROUP BY time " \
+                ") " \
+                "SELECT extract(EPOCH FROM a.time)::BIGINT * 1000 " \
+                "           AS ctime_ms," \
+                "       array_percentage(a.values, b.values) AS values, " \
+                "       array_percentage(array_subtract(a.values, " \
+                "           lag(a.values) OVER (ORDER BY a.time)), " \
+                "           array_subtract(b.values, lag(b.values) OVER " \
+                "           (ORDER BY a.time))) AS rates " \
+                "FROM value_list a, totals b " \
+                "WHERE a.time = b.time " \
+                "  AND plugin = :plugin " \
+                "  AND host = :host " \
+                "  AND a.time >= :time_dt " \
+                "  %(where)s " \
+                "ORDER BY a.time;"
+    else:
+        sql = "SELECT extract(EPOCH FROM time)::BIGINT * 1000 AS ctime_ms, " \
+                "       values, " \
+                "       array_subtract(values, lag(values) " \
+                "           OVER (ORDER BY time)) AS rates " \
+                "FROM value_list " \
+                "WHERE plugin = :plugin " \
+                "  AND host = :host " \
+                "  AND time >= :time_dt " \
+                "  %(where)s " \
+                "ORDER BY time;"
+
+    data = session.execute(sql % \
+            {'where': where_condition, 'per_where': per_condition}, sql_params)
     if data.rowcount == 0:
         return Response()
 
@@ -252,24 +305,26 @@ def data_csv(request):
 
     # TODO: With thousands of data points, this loop seems to be unacceptably
     # slow. Is there a faster way? Database stored procedure?
-    oldrow = data.fetchone()
-    for newrow in data:
+
+    # Throw away the first row because there will be no rates calculated from
+    # the window function.
+    data.fetchone()
+    for row in data:
         datum = []
         for i in range(length):
             if dsnames[i] in plot_dsnames:
                 # TODO: Handle absolute types.
                 if dstypes[i] == 'counter':
                     # FIXME: Handle wrap around.
-                    datum.append(str(
-                            newrow['values'][i] - oldrow['values'][i]))
+                    val = row['rates'][i]
                 elif dstypes[i] == 'derive':
-                    datum.append(str(
-                            newrow['values'][i] - oldrow['values'][i]))
+                    val = row['rates'][i]
                 elif dstypes[i] == 'gauge':
-                    datum.append(str(oldrow['values'][i]))
+                    val = row['values'][i]
 
-        csv += '%s,%s\n' % (oldrow['ctime_ms'], ','.join(datum))
-        oldrow = newrow
+                datum.append(str(val))
+
+        csv += '%s,%s\n' % (row['ctime_ms'], ','.join(datum))
 
     return Response(body=csv, content_type='text/csv')
 
@@ -392,6 +447,11 @@ def session(request):
         request.session['meta'] = {}
     meta = request.session['meta']
 
+    if 'percentage' in request.session and request.session['percentage']:
+        percentage = 'Yes'
+    else:
+        percentage = 'No'
+
     if plugin <> '' and type <> '' and len(hosts) > 0:
         add_source = True
     else:
@@ -426,7 +486,8 @@ def session(request):
             'dsnames': ', '.join(dsnames), 'url_list': url_list,
             'add_source': add_source, 'show_clear': show_clear,
             'meta_keys': meta_keys, 'meta': meta,
-            'plugin_instance': plugin_instance, 'type_instance': type_instance}
+            'plugin_instance': plugin_instance, 'type_instance': type_instance,
+            'percentage': percentage}
 
 
 @view_config(route_name='toggle_dsname')
@@ -464,6 +525,16 @@ def toggle_meta(request):
         request.session['meta'] = {}
 
     request.session['meta'][key] = value
+
+    return Response()
+
+
+@view_config(route_name='toggle_percentage')
+def toggle_percentage(request):
+    if 'percentage' in request.session and request.session['percentage']:
+        request.session['percentage'] = False
+    else:
+        request.session['percentage'] = True
 
     return Response()
 

@@ -6,8 +6,18 @@ Selected values:
   <li>Type Instance: ${type_instance}</li>
   <li>Host (req): ${hosts}</li>
   <li>Data Sets: ${dsnames}</li>
+  <li class="clicked_percentage">Percentage: ${percentage}</li>
   <li tal:repeat="(key, value) meta.items()">${key}: ${value}</li>
 </ul>
+<script type="text/javascript">
+  $( '.clicked_percentage' ).click(function() {
+    $.get( "toggle_percentage", function( plugin_instances ) {
+      $.get( "session", function( session ) {
+        $( '#session' ).html( session );
+      } );
+    } );
+  } );
+</script>
 
 <p>
   <span class="clicked_add_source" tal:condition="add_source == True">

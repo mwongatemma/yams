@@ -49,6 +49,7 @@
           labelsAngle: 45
         },
         yaxis : {
+          ${ymax}
           min: 0
         },
         HtmlText: false
