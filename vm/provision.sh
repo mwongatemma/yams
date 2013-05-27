@@ -40,6 +40,7 @@ if [ ! -f "${DONEFILE}" ]; then
 			postgresql-client-$POSTGRES_VER \
 			postgresql-contrib-$POSTGRES_VER \
 			postgresql-server-dev-$POSTGRES_VER \
+			postgresql-$POSTGRES_VER-plr \
 			python-dev \
 			python-pip || exit 1
 
@@ -51,24 +52,31 @@ if [ ! -f "${DONEFILE}" ]; then
 			make install) || exit 1
 	cp -p /vagrant/collectd.conf /opt/collectd/etc/collectd.conf || exit 1
 
-	git clone git://github.com/mwongatemma/yams.git \
-			/usr/local/src/yams || exit 1
-	(cd /usr/local/src/yams && git checkout staging) || exit 1
+	if [ ! -d "/usr/local/src/yams" ]; then
+		# YAMS src not mounted from host, download it
+		git clone git://github.com/mwongatemma/yams.git \
+				/usr/local/src/yams || exit 1
+		(cd /usr/local/src/yams && git checkout staging) || exit 1
+		(cd /usr/local/src/yams/yams-wui && python setup.py install) || exit 1
+	else
+		(cd /usr/local/src/yams/yams-wui && python setup.py develop) || exit 1
+	fi
 	cp -p /usr/local/src/yams/examples/collectd/types.db.postgresql \
 			/opt/collectd/etc/types.db.postgresql || exit 1
 
 	export CFLAGS=-I/usr/include/postgresql
 	(cd /usr/local/src/yams/etl && make install) || exit 1
-	(cd /usr/local/src/yams/yams-wui && python setup.py install) || exit 1
 
 	# Database setup
-	cp -p /vagrant/pg_hba.conf /etc/postgresql/9.2/main/pg_hba.conf || exit 1
-	chown postgres:postgres /etc/postgresql/9.2/main/pg_hba.conf || exit 1
-	service postgresql reload || exit 1
+	cp -p /vagrant/pg_hba.conf \
+			/etc/postgresql/${POSTGRES_VER}/main/pg_hba.conf || exit
+	chown postgres:postgres \
+			/etc/postgresql/${POSTGRES_VER}/main/pg_hba.conf || exit
+	service postgresql stop || exit 1
+	service postgresql start || exit 1
 	pip install pgxnclient || exit 1
 	pgxn install json_enhancements || exit 1
 	su - postgres -c /usr/local/src/yams/pg/create-database.sh || exit 1
-	su - postgres -c "psql -d collectd -c \"CREATE EXTENSION json_enhancements;\"" || exit 1
 
 	# Set up FastCGI program under lighttpd
 	lighttpd-enable-mod fastcgi || exit 1
