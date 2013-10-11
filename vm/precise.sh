@@ -1,6 +1,6 @@
 #!/bin/sh
 
-POSTGRES_VER=9.2
+POSTGRES_VER=9.3
 
 DONEFILE="/root/.done"
 
@@ -62,13 +62,11 @@ if [ ! -f "${DONEFILE}" ]; then
 	(cd /usr/local/src/yams/yams-wui && python setup.py install) || exit 1
 
 	# Database setup
-	cp -p /vagrant/pg_hba.conf /etc/postgresql/9.2/main/pg_hba.conf || exit 1
-	chown postgres:postgres /etc/postgresql/9.2/main/pg_hba.conf || exit 1
+	cp -p /vagrant/pg_hba.conf /etc/postgresql/${POSTGRES_VER}/main/pg_hba.conf || exit 1
+	chown postgres:postgres /etc/postgresql/${POSTGRES_VER}/main/pg_hba.conf || exit 1
 	service postgresql reload || exit 1
 	pip install pgxnclient || exit 1
-	pgxn install json_enhancements || exit 1
 	su - postgres -c /usr/local/src/yams/pg/create-database.sh || exit 1
-	su - postgres -c "psql -d collectd -c \"CREATE EXTENSION json_enhancements;\"" || exit 1
 
 	# Set up FastCGI program under lighttpd
 	lighttpd-enable-mod fastcgi || exit 1
