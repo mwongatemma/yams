@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <pthread.h>
+#include <syslog.h>
 
 #include <hiredis/hiredis.h>
 
@@ -177,7 +178,7 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 	snprintf(sql, SQL_LEN, SELECT_DAY0, (int) timet);
 	res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-		fprintf(stderr, "SELECT_DAY0 command failed: %s %s",
+		syslog(LOG_ERR, "SELECT_DAY0 command failed: %s %s",
 				PQresultErrorField(res, PG_DIAG_SQLSTATE),
 				PQerrorMessage(conn));
 		return 1;
@@ -188,7 +189,7 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 	snprintf(sql, SQL_LEN, SELECT_DAY1, day0_str);
 	res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-		fprintf(stderr, "SELECT_DAY1 command failed: %s %s",
+		syslog(LOG_ERR, "SELECT_DAY1 command failed: %s %s",
 				PQresultErrorField(res, PG_DIAG_SQLSTATE),
 				PQerrorMessage(conn));
 		return 1;
@@ -222,7 +223,7 @@ static inline int do_command(PGconn *conn, char *sql)
 {
 	PGresult *res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-		fprintf(stderr, "command failed: %s %s\n",
+		syslog(LOG_ERR, "command failed: %s %s",
 				PQresultErrorField(res, PG_DIAG_SQLSTATE),
 				PQerrorMessage(conn));
 		return 1;
@@ -241,7 +242,7 @@ int do_insert(PGconn *conn, char *sql)
 			PQclear(res);
 			return 1;
 		} else {
-			fprintf(stderr, "INSERT command failed: %s %s",
+			syslog(LOG_WARNING, "INSERT command failed: %s %s",
 					PQresultErrorField(res, PG_DIAG_SQLSTATE),
 					PQerrorMessage(conn));
 		}
@@ -330,7 +331,7 @@ int load(PGconn *conn, json_object *jsono)
 		if (i == 0) {
 			i = do_insert(conn, sql);
 			if (i != 0) {
-				fprintf(stderr, "second insert attempt failed\n");
+				syslog(LOG_ERR, "second insert attempt failed");
 				return 1;
 			}
 		} else {
@@ -342,7 +343,7 @@ int load(PGconn *conn, json_object *jsono)
 			 */
 			sleep(3);
 			if (do_insert(conn, sql) != 0)
-				fprintf(stderr, "unexpected second insert failure\n");
+				syslog(LOG_ERR, "unexpected second insert failure");
 			return 1;
 		}
 	}
@@ -419,7 +420,7 @@ static inline int work(struct opts *options)
 	 */
 	conn = PQconnectdb(options->conninfo);
 	if (PQstatus(conn) != CONNECTION_OK) {
-		fprintf(stderr, "Connection to database failed: %s",
+		syslog(LOG_ERR, "Connection to database failed: %s",
 				PQerrorMessage(conn));
 		exit(1);
 	}
@@ -602,6 +603,9 @@ int main(int argc, char *argv[])
 		close(0);
 	}
 
+	openlog("yams-etl", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
+	syslog(LOG_NOTICE, "starting");
+
 	memset(&sig_int_action, '\0', sizeof (sig_int_action));
 	sig_int_action.sa_handler = sig_int_handler;
 	if (sigaction(SIGINT, &sig_int_action, NULL) != 0) {
@@ -632,7 +636,7 @@ int main(int argc, char *argv[])
 		thistime = time(NULL);
 
 		if (stats_flag && thistime - lasttime >= 60) {
-			printf("%s %d %d\n", ctime(&thistime), options.rcount,
+			syslog(LOG_INFO, "blpops:%d inserts:%d", options.rcount,
 					options.pcount);
 			options.rcount = 0;
 			options.pcount = 0;
@@ -643,6 +647,9 @@ int main(int argc, char *argv[])
 
 	if (daemonize)
 		unlink("/tmp/yams-etl.pid");
+
+	syslog(LOG_NOTICE, "stopping");
+	closelog();
 
 	return 0;
 }
