@@ -84,5 +84,5 @@ fi
 touch ${DONEFILE}
 
 # Start YAMS etl and collectd by hand.
-nohup yams-etl --pguser collectd >> /var/log/yams-etl.log &
+yams-etl --pguser collectd &
 /opt/collectd/sbin/collectd || exit 1

@@ -4,6 +4,8 @@
 #include <getopt.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
+#include <signal.h>
 #include <pthread.h>
 
 #include <hiredis/hiredis.h>
@@ -72,6 +74,8 @@
 		"       AND time < '%s'::TIMESTAMP AT TIME ZONE 'UTC'),\n" \
 		"    CHECK (plugin = '%s')\n" \
 		") INHERITS(value_list);"
+
+static int loop = 0;
 
 static int verbose_flag = 0;
 static int stats_flag = 0;
@@ -358,6 +362,16 @@ int process(PGconn *conn, char *json_str)
 	return 0;
 }
 
+static void sig_int_handler(int __attribute__((unused)) signal)
+{
+	loop++;
+}
+
+static void sig_term_handler(int __attribute__((unused)) signal)
+{
+	loop++;
+}
+
 void *thread_main(void *data)
 {
 	work((struct opts *) data);
@@ -367,7 +381,8 @@ void *thread_main(void *data)
 void usage()
 {
 	printf("usage: yams-etl --help|-?\n");
-	printf("       yams-etl [--pgdatabase <PGDATABASE>]\n");
+	printf("       yams-etl [-f (Don't fork to the background.)]\n");
+	printf("                [--pgdatabase <PGDATABASE>]\n");
 	printf("                [--pghost <PGHOST>]\n");
 	printf("                [--pgport <PGPORT>]\n");
 	printf("                [--pgusername <PGUSER>]\n");
@@ -409,7 +424,7 @@ static inline int work(struct opts *options)
 		exit(1);
 	}
 
-	while (1) {
+	while (loop == 0) {
 		/* Pop the POST data from Redis. */
 		/* Why doesn't BLPOP return any data? */
 		reply = redisCommand(redis, "BLPOP %s 0", options->redis_key);
@@ -447,6 +462,8 @@ static inline int work(struct opts *options)
 		freeReplyObject(reply);
 	}
 
+	PQfinish(conn);
+
 	return 0;
 }
 
@@ -473,6 +490,12 @@ int main(int argc, char *argv[])
 
 	time_t thistime, lasttime;
 
+	int daemonize = 1;
+	pid_t pid;
+
+	struct sigaction sig_int_action;
+	struct sigaction sig_term_action;
+
 	while (1) {
 		int option_index = 0;
 		static struct option long_options[] = {
@@ -489,7 +512,7 @@ int main(int argc, char *argv[])
 			{"workers", required_argument, NULL, 'w'},
 			{0, 0, 0, 0}
 		};
-		c = getopt_long(argc, argv, "?D:d:H:P:p:s:U:vw:", long_options,
+		c = getopt_long(argc, argv, "?D:d:fH:P:p:s:U:vw:", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -537,6 +560,9 @@ int main(int argc, char *argv[])
 		case 'd':
 			options.redis_key = optarg;
 			break;
+		case 'f':
+			daemonize = 0;
+			break;
 		case 'p':
 			options.redis_port = atoi(optarg);
 			break;
@@ -552,6 +578,44 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (daemonize) {
+		FILE *fh;
+
+		if ((pid = fork()) == -1) {
+			fprintf(stderr, "fork: %d\n", errno);
+			return 1;
+		} else if (pid != 0) {
+			return 0;
+		}
+
+		setsid();
+
+		if ((fh = fopen("/tmp/yams-etl.pid", "w")) == NULL) {
+			fprintf(stderr, "fopen: %d\n", errno);
+			return 1;
+		}
+		fprintf(fh, "%i\n", (int) getpid());
+		fclose(fh);
+
+		close(2);
+		close(1);
+		close(0);
+	}
+
+	memset(&sig_int_action, '\0', sizeof (sig_int_action));
+	sig_int_action.sa_handler = sig_int_handler;
+	if (sigaction(SIGINT, &sig_int_action, NULL) != 0) {
+		fprintf(stderr, "INT handler: %d\n", errno);
+		return 1;
+	}
+
+	memset(&sig_term_action, '\0', sizeof (sig_term_action));
+	sig_term_action.sa_handler = sig_term_handler;
+	if (sigaction(SIGTERM, &sig_term_action, NULL) != 0) {
+		fprintf(stderr, "TERM handler: %d\n", errno);
+		return 1;
+	}
+
 	threads = (pthread_t *) malloc(sizeof(pthread_t) * workers);
 
 	for (c = 0; c < workers; c++) {
@@ -564,7 +628,7 @@ int main(int argc, char *argv[])
 	}
 
 	lasttime = time(NULL);
-	while (1) {
+	while (loop == 0) {
 		thistime = time(NULL);
 
 		if (stats_flag && thistime - lasttime >= 60) {
@@ -576,6 +640,9 @@ int main(int argc, char *argv[])
 		}
 		sleep(60);
 	}
+
+	if (daemonize)
+		unlink("/tmp/yams-etl.pid");
 
 	return 0;
 }
