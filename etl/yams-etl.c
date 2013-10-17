@@ -101,7 +101,6 @@ int create_partition_table(PGconn *, char *, const char *, const char *,
 static inline int do_command(PGconn *, char *);
 int do_insert(PGconn *, char *);
 int load(PGconn *, json_object *);
-int process(PGconn *, char *);
 void *thread_main(void *data);
 void usage();
 static inline int work(struct opts *);
@@ -351,18 +350,6 @@ int load(PGconn *conn, json_object *jsono)
 	return 0;
 }
 
-int process(PGconn *conn, char *json_str)
-{
-	struct json_object *jsono;
-
-	jsono = json_tokener_parse(json_str);
-	load(conn, jsono);
-	/* json_object_put() releases memory? */
-	json_object_put(jsono);
-
-	return 0;
-}
-
 static void sig_int_handler(int __attribute__((unused)) signal)
 {
 	loop++;
@@ -402,8 +389,7 @@ static inline int work(struct opts *options)
 
 	PGconn *conn;
 
-	char *p1, *p2;
-	int bcount = 0;
+	int i, count = 0;
 
 	/*
 	 * Open a connection to Redis once the FastCGI service starts for
@@ -426,6 +412,8 @@ static inline int work(struct opts *options)
 	}
 
 	while (loop == 0) {
+		struct json_object *jsono;
+
 		/* Pop the POST data from Redis. */
 		/* Why doesn't BLPOP return any data? */
 		reply = redisCommand(redis, "BLPOP %s 0", options->redis_key);
@@ -434,33 +422,29 @@ static inline int work(struct opts *options)
 		if (reply->elements != 2 || reply->element[1]->str == NULL)
 			continue;
 
+		if (verbose_flag)
+			syslog(LOG_DEBUG, "processing: %s", reply->element[1]->str);
+
 		/*
-		 * json-c doesn't like the array collect creates for some reason.  Need
-		 * to manually break out the individual JSON objects from an array type
-		 * structure before we can actually process the data.
+		 * json-c doesn't like the extra double quotes added by redis.  Cheat
+		 * by skipping the first double quote.
 		 */
-		p1 = reply->element[1]->str;
-		while (*p1 != '\0') {
-			if (*p1 == '{') {
-				++bcount;
-				p2 = p1 + 1;
-				while (bcount > 0) {
-					if (*p2 == '{')
-						++bcount;
-					else if (*p2 == '}')
-						--bcount;
-					++p2;
-				}
-				*p2 = '\0';
-				process(conn, p1);
-				if (stats_flag)
-					++options->pcount;
-				p1 = p2 + 1;
-			} else {
-				++p1;
-			}
+		jsono = json_tokener_parse(reply->element[1]->str + 1);
+		count = json_object_array_length(jsono);
+		if (verbose_flag)
+			syslog(LOG_DEBUG, "items to convert: %d", count);
+		for (i = 0; i < count; i++) {
+			if (verbose_flag)
+				syslog(LOG_DEBUG, "converting [%d]: %s", i,
+						json_object_get_string(
+								json_object_array_get_idx(jsono, i)));
+			load(conn, json_object_array_get_idx(jsono, i));
+			if (stats_flag)
+				++options->pcount;
 		}
+		/* release memory */
 		freeReplyObject(reply);
+		json_object_put(jsono);
 	}
 
 	PQfinish(conn);
