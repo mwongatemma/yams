@@ -4,7 +4,10 @@
 #include <getopt.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
+#include <signal.h>
 #include <pthread.h>
+#include <syslog.h>
 
 #include <hiredis/hiredis.h>
 
@@ -73,6 +76,8 @@
 		"    CHECK (plugin = '%s')\n" \
 		") INHERITS(value_list);"
 
+static int loop = 0;
+
 static int verbose_flag = 0;
 static int stats_flag = 0;
 
@@ -96,7 +101,6 @@ int create_partition_table(PGconn *, char *, const char *, const char *,
 static inline int do_command(PGconn *, char *);
 int do_insert(PGconn *, char *);
 int load(PGconn *, json_object *);
-int process(PGconn *, char *);
 void *thread_main(void *data);
 void usage();
 static inline int work(struct opts *);
@@ -173,7 +177,7 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 	snprintf(sql, SQL_LEN, SELECT_DAY0, (int) timet);
 	res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-		fprintf(stderr, "SELECT_DAY0 command failed: %s %s",
+		syslog(LOG_ERR, "SELECT_DAY0 command failed: %s %s",
 				PQresultErrorField(res, PG_DIAG_SQLSTATE),
 				PQerrorMessage(conn));
 		return 1;
@@ -184,7 +188,7 @@ int create_partition_table(PGconn *conn, char *tablename, const char *plugin,
 	snprintf(sql, SQL_LEN, SELECT_DAY1, day0_str);
 	res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-		fprintf(stderr, "SELECT_DAY1 command failed: %s %s",
+		syslog(LOG_ERR, "SELECT_DAY1 command failed: %s %s",
 				PQresultErrorField(res, PG_DIAG_SQLSTATE),
 				PQerrorMessage(conn));
 		return 1;
@@ -218,7 +222,7 @@ static inline int do_command(PGconn *conn, char *sql)
 {
 	PGresult *res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-		fprintf(stderr, "command failed: %s %s\n",
+		syslog(LOG_ERR, "command failed: %s %s",
 				PQresultErrorField(res, PG_DIAG_SQLSTATE),
 				PQerrorMessage(conn));
 		return 1;
@@ -237,7 +241,7 @@ int do_insert(PGconn *conn, char *sql)
 			PQclear(res);
 			return 1;
 		} else {
-			fprintf(stderr, "INSERT command failed: %s %s",
+			syslog(LOG_WARNING, "INSERT command failed: %s %s",
 					PQresultErrorField(res, PG_DIAG_SQLSTATE),
 					PQerrorMessage(conn));
 		}
@@ -326,7 +330,7 @@ int load(PGconn *conn, json_object *jsono)
 		if (i == 0) {
 			i = do_insert(conn, sql);
 			if (i != 0) {
-				fprintf(stderr, "second insert attempt failed\n");
+				syslog(LOG_ERR, "second insert attempt failed");
 				return 1;
 			}
 		} else {
@@ -338,7 +342,7 @@ int load(PGconn *conn, json_object *jsono)
 			 */
 			sleep(3);
 			if (do_insert(conn, sql) != 0)
-				fprintf(stderr, "unexpected second insert failure\n");
+				syslog(LOG_ERR, "unexpected second insert failure");
 			return 1;
 		}
 	}
@@ -346,16 +350,14 @@ int load(PGconn *conn, json_object *jsono)
 	return 0;
 }
 
-int process(PGconn *conn, char *json_str)
+static void sig_int_handler(int __attribute__((unused)) signal)
 {
-	struct json_object *jsono;
+	loop++;
+}
 
-	jsono = json_tokener_parse(json_str);
-	load(conn, jsono);
-	/* json_object_put() releases memory? */
-	json_object_put(jsono);
-
-	return 0;
+static void sig_term_handler(int __attribute__((unused)) signal)
+{
+	loop++;
 }
 
 void *thread_main(void *data)
@@ -367,7 +369,8 @@ void *thread_main(void *data)
 void usage()
 {
 	printf("usage: yams-etl --help|-?\n");
-	printf("       yams-etl [--pgdatabase <PGDATABASE>]\n");
+	printf("       yams-etl [-f (Don't fork to the background.)]\n");
+	printf("                [--pgdatabase <PGDATABASE>]\n");
 	printf("                [--pghost <PGHOST>]\n");
 	printf("                [--pgport <PGPORT>]\n");
 	printf("                [--pgusername <PGUSER>]\n");
@@ -386,8 +389,7 @@ static inline int work(struct opts *options)
 
 	PGconn *conn;
 
-	char *p1, *p2;
-	int bcount = 0;
+	int i, count = 0;
 
 	/*
 	 * Open a connection to Redis once the FastCGI service starts for
@@ -404,12 +406,14 @@ static inline int work(struct opts *options)
 	 */
 	conn = PQconnectdb(options->conninfo);
 	if (PQstatus(conn) != CONNECTION_OK) {
-		fprintf(stderr, "Connection to database failed: %s",
+		syslog(LOG_ERR, "Connection to database failed: %s",
 				PQerrorMessage(conn));
 		exit(1);
 	}
 
-	while (1) {
+	while (loop == 0) {
+		struct json_object *jsono;
+
 		/* Pop the POST data from Redis. */
 		/* Why doesn't BLPOP return any data? */
 		reply = redisCommand(redis, "BLPOP %s 0", options->redis_key);
@@ -418,34 +422,32 @@ static inline int work(struct opts *options)
 		if (reply->elements != 2 || reply->element[1]->str == NULL)
 			continue;
 
+		if (verbose_flag)
+			syslog(LOG_DEBUG, "processing: %s", reply->element[1]->str);
+
 		/*
-		 * json-c doesn't like the array collect creates for some reason.  Need
-		 * to manually break out the individual JSON objects from an array type
-		 * structure before we can actually process the data.
+		 * json-c doesn't like the extra double quotes added by redis.  Cheat
+		 * by skipping the first double quote.
 		 */
-		p1 = reply->element[1]->str;
-		while (*p1 != '\0') {
-			if (*p1 == '{') {
-				++bcount;
-				p2 = p1 + 1;
-				while (bcount > 0) {
-					if (*p2 == '{')
-						++bcount;
-					else if (*p2 == '}')
-						--bcount;
-					++p2;
-				}
-				*p2 = '\0';
-				process(conn, p1);
-				if (stats_flag)
-					++options->pcount;
-				p1 = p2 + 1;
-			} else {
-				++p1;
-			}
+		jsono = json_tokener_parse(reply->element[1]->str + 1);
+		count = json_object_array_length(jsono);
+		if (verbose_flag)
+			syslog(LOG_DEBUG, "items to convert: %d", count);
+		for (i = 0; i < count; i++) {
+			if (verbose_flag)
+				syslog(LOG_DEBUG, "converting [%d]: %s", i,
+						json_object_get_string(
+								json_object_array_get_idx(jsono, i)));
+			load(conn, json_object_array_get_idx(jsono, i));
+			if (stats_flag)
+				++options->pcount;
 		}
+		/* release memory */
 		freeReplyObject(reply);
+		json_object_put(jsono);
 	}
+
+	PQfinish(conn);
 
 	return 0;
 }
@@ -473,6 +475,12 @@ int main(int argc, char *argv[])
 
 	time_t thistime, lasttime;
 
+	int daemonize = 1;
+	pid_t pid;
+
+	struct sigaction sig_int_action;
+	struct sigaction sig_term_action;
+
 	while (1) {
 		int option_index = 0;
 		static struct option long_options[] = {
@@ -489,7 +497,7 @@ int main(int argc, char *argv[])
 			{"workers", required_argument, NULL, 'w'},
 			{0, 0, 0, 0}
 		};
-		c = getopt_long(argc, argv, "?D:d:H:P:p:s:U:vw:", long_options,
+		c = getopt_long(argc, argv, "?D:d:fH:P:p:s:U:vw:", long_options,
 				&option_index);
 		if (c == -1)
 			break;
@@ -537,6 +545,9 @@ int main(int argc, char *argv[])
 		case 'd':
 			options.redis_key = optarg;
 			break;
+		case 'f':
+			daemonize = 0;
+			break;
 		case 'p':
 			options.redis_port = atoi(optarg);
 			break;
@@ -552,6 +563,47 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (daemonize) {
+		FILE *fh;
+
+		if ((pid = fork()) == -1) {
+			fprintf(stderr, "fork: %d\n", errno);
+			return 1;
+		} else if (pid != 0) {
+			return 0;
+		}
+
+		setsid();
+
+		if ((fh = fopen("/tmp/yams-etl.pid", "w")) == NULL) {
+			fprintf(stderr, "fopen: %d\n", errno);
+			return 1;
+		}
+		fprintf(fh, "%i\n", (int) getpid());
+		fclose(fh);
+
+		close(2);
+		close(1);
+		close(0);
+	}
+
+	openlog("yams-etl", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
+	syslog(LOG_NOTICE, "starting");
+
+	memset(&sig_int_action, '\0', sizeof (sig_int_action));
+	sig_int_action.sa_handler = sig_int_handler;
+	if (sigaction(SIGINT, &sig_int_action, NULL) != 0) {
+		fprintf(stderr, "INT handler: %d\n", errno);
+		return 1;
+	}
+
+	memset(&sig_term_action, '\0', sizeof (sig_term_action));
+	sig_term_action.sa_handler = sig_term_handler;
+	if (sigaction(SIGTERM, &sig_term_action, NULL) != 0) {
+		fprintf(stderr, "TERM handler: %d\n", errno);
+		return 1;
+	}
+
 	threads = (pthread_t *) malloc(sizeof(pthread_t) * workers);
 
 	for (c = 0; c < workers; c++) {
@@ -564,11 +616,11 @@ int main(int argc, char *argv[])
 	}
 
 	lasttime = time(NULL);
-	while (1) {
+	while (loop == 0) {
 		thistime = time(NULL);
 
 		if (stats_flag && thistime - lasttime >= 60) {
-			printf("%s %d %d\n", ctime(&thistime), options.rcount,
+			syslog(LOG_INFO, "blpops:%d inserts:%d", options.rcount,
 					options.pcount);
 			options.rcount = 0;
 			options.pcount = 0;
@@ -576,6 +628,12 @@ int main(int argc, char *argv[])
 		}
 		sleep(60);
 	}
+
+	if (daemonize)
+		unlink("/tmp/yams-etl.pid");
+
+	syslog(LOG_NOTICE, "stopping");
+	closelog();
 
 	return 0;
 }

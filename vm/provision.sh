@@ -1,6 +1,6 @@
 #!/bin/sh
 
-POSTGRES_VER=9.2
+POSTGRES_VER=9.3
 
 DONEFILE="/root/.done"
 
@@ -75,7 +75,6 @@ if [ ! -f "${DONEFILE}" ]; then
 	service postgresql stop || exit 1
 	service postgresql start || exit 1
 	pip install pgxnclient || exit 1
-	pgxn install json_enhancements || exit 1
 	su - postgres -c /usr/local/src/yams/pg/create-database.sh || exit 1
 
 	# Set up FastCGI program under lighttpd
@@ -94,5 +93,5 @@ fi
 touch ${DONEFILE}
 
 # Start YAMS etl and collectd by hand.
-nohup yams-etl --pguser collectd >> /var/log/yams-etl.log &
+yams-etl --pguser collectd &
 /opt/collectd/sbin/collectd || exit 1
