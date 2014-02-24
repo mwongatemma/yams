@@ -36,7 +36,7 @@
 		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
 		"        (SELECT array_agg(trim(BOTH '\"' FROM a::TEXT))\n" \
 		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
-		"        (SELECT array_agg(a::TEXT::NUMERIC)\n" \
+		"        (SELECT array_agg(a::TEXT::DOUBLE PRECISION)\n" \
 		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z));"
 
 /*
@@ -55,7 +55,7 @@
 		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
 		"        (SELECT array_agg(trim(BOTH '\"' FROM a::TEXT))\n" \
 		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
-		"        (SELECT array_agg(a::TEXT::NUMERIC)\n" \
+		"        (SELECT array_agg(a::TEXT::DOUBLE PRECISION)\n" \
 		"         FROM (SELECT json_array_elements('%s'::json) AS a) AS z),\n" \
 		"        (SELECT hstore(coalesce(string_agg(a::TEXT, ','), ''))\n" \
 		"         FROM (SELECT hstore(ARRAY[key::TEXT, value::TEXT]) AS a\n" \

@@ -25,22 +25,25 @@ GRANT USAGE ON SCHEMA ${COLLECTD_USER} TO ${WUI_USER};
 ALTER DEFAULT PRIVILEGES IN SCHEMA ${COLLECTD_DB}
 GRANT SELECT ON TABLES TO ${WUI_USER};
 
-CREATE OR REPLACE FUNCTION yams.array_add(x numeric[], y numeric[])
- RETURNS numeric[]
+CREATE OR REPLACE FUNCTION yams.array_add(x DOUBLE PRECISION[],
+                                          y DOUBLE PRECISION[])
+ RETURNS DOUBLE PRECISION[]
  LANGUAGE plr
 AS \$function\$
  return (x + y)
 \$function\$;
 
-CREATE OR REPLACE FUNCTION yams.array_subtract(x numeric[], y numeric[])
- RETURNS numeric[]
+CREATE OR REPLACE FUNCTION yams.array_subtract(x DOUBLE PRECISION[],
+                                               y DOUBLE PRECISION[])
+ RETURNS DOUBLE PRECISION[]
  LANGUAGE plr
 AS \$function\$
  return (x - y)
 \$function\$;
 
-CREATE OR REPLACE FUNCTION yams.array_percentage(x numeric[], y numeric[])
- RETURNS numeric[]
+CREATE OR REPLACE FUNCTION yams.array_percentage(x DOUBLE PRECISION[],
+                                                 y DOUBLE PRECISION[])
+ RETURNS DOUBLE PRECISION[]
  LANGUAGE plr
 AS \$function\$
  tmp <- x / y * 100
@@ -49,9 +52,9 @@ AS \$function\$
  return(tmp)
 \$function\$;
 
-CREATE AGGREGATE yams.sum(numeric[]) (
+CREATE AGGREGATE yams.sum(DOUBLE PRECISION[]) (
  SFUNC = yams.array_add,
- STYPE = numeric[],
+ STYPE = DOUBLE PRECISION[],
  INITCOND = '{0}'
 );
 $$
@@ -89,7 +92,7 @@ CREATE TABLE value_list (
   type_instance VARCHAR(64),
   dsnames VARCHAR(512)[] NOT NULL,
   dstypes VARCHAR(8)[] NOT NULL,
-  values NUMERIC[] NOT NULL,
+  values DOUBLE PRECISION[] NOT NULL,
   meta HSTORE NOT NULL DEFAULT ''
 );
 COMMIT;
